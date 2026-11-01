@@ -77,3 +77,7 @@ if (views.length) {
 const notes = read('feedback.jsonl').filter(f => f.t >= since);
 console.log(`\nFeedback (${notes.length}):`);
 for (const f of notes.slice(-20)) console.log(`  ${f.t.slice(0, 16).replace('T', ' ')} ${f.country || '--'}${f.email ? ' · ' + f.email : ''}${f.page ? ' · ' + f.page : ''}\n    ${f.message.replace(/\s+/g, ' ').slice(0, 300)}`);
+
+let emails = {};
+try { emails = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'email-reminders.json'), 'utf8')); } catch { /* none yet */ }
+console.log(`\nEmail reminder sign-ups: ${Object.keys(emails).length}` + (Object.keys(emails).length ? ` (latest ${Object.values(emails).map(e => e.since).sort().at(-1).slice(0, 10)})` : ''));

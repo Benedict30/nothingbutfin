@@ -5,6 +5,8 @@ import type { Statements } from './types'
 // company adds it to the calendar at /cal/<id>.ics, which the person subscribes to once.
 const ID_KEY = 'fsv-calendar-id'
 const SUBSCRIBED_KEY = 'fsv-calendar-subscribed'
+const EMAIL_KEY = 'fsv-email-reminders'
+const LAST_EMAIL_KEY = 'fsv-email'
 const VALID = /^[A-Za-z0-9_-]{16,64}$/
 
 // "Use on another browser": a link with ?calendar=<id> makes this browser use that calendar
@@ -42,6 +44,30 @@ export async function loadFollows(): Promise<string[]> {
   const r = await fetch(`api/follows?id=${encodeURIComponent(calendarId())}`)
   return (await r.json()).tickers ?? []
 }
+
+/** The email this calendar's earnings reminders go to (opt-in), or null. */
+export async function loadEmail(): Promise<string | null> {
+  const r = await fetch(`api/email-reminders?id=${encodeURIComponent(calendarId())}`)
+  return (await r.json()).email ?? null
+}
+/** Sets the reminder email (an empty one turns reminders off); returns the email now stored. */
+export async function saveEmail(email: string): Promise<string | null> {
+  const r = await fetch(`api/email-reminders?id=${encodeURIComponent(calendarId())}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...visitorHeaders() },
+    body: JSON.stringify({ email }),
+  })
+  const j = await r.json()
+  if (!r.ok) throw new Error(j.error || 'Server error')
+  try { localStorage.setItem(EMAIL_KEY, j.email ? '1' : '') } catch { /* storage unavailable */ }
+  rememberEmail(j.email)
+  return j.email ?? null
+}
+/** The email last entered in this browser (reminders or feedback), to fill the next form with. */
+export const rememberedEmail = () => { try { return localStorage.getItem(LAST_EMAIL_KEY) || '' } catch { return '' } }
+export const rememberEmail = (email: string) => { try { if (email) localStorage.setItem(LAST_EMAIL_KEY, email) } catch { /* storage unavailable */ } }
+/** Whether this browser has signed up for email reminders (to skip the prompt after following). */
+export const hasEmail = () => { try { return localStorage.getItem(EMAIL_KEY) === '1' } catch { return false } }
 
 export interface CalendarDetails {
   items: { ticker: string; name: string; next: NonNullable<Statements['nextEarnings']> | null }[]

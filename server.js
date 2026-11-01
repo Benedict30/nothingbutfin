@@ -52,6 +52,7 @@ const CACHE_DIR = path.resolve(process.env.CACHE_DIR || path.join(__dirname, 'ca
 const FOLLOWS = path.join(path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data')), 'follows.json'); // personal earnings calendars
 const DATA_DIR = path.dirname(FOLLOWS); // calendars, logs, free-story counts
 const CAL_ACTIVITY = path.join(path.dirname(FOLLOWS), 'calendar-activity.json'); // when each calendar was last used
+const EMAILS = path.join(path.dirname(FOLLOWS), 'email-reminders.json'); // emails opted in for earnings reminders
 const FACTS_TTL = (+process.env.FACTS_TTL_HOURS || 12) * 3600e3;
 const TICKERS_TTL = 24 * 3600e3;
 const SEC_DATA = process.env.SEC_DATA_BASE || 'https://data.sec.gov';
@@ -502,7 +503,7 @@ async function serveStatic(req, res, pathname) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
-    const post = req.method === 'POST' && ['/api/magazine', '/api/follows', '/api/feedback'].includes(url.pathname); // the only writes
+    const post = req.method === 'POST' && ['/api/magazine', '/api/follows', '/api/feedback', '/api/email-reminders'].includes(url.pathname); // the only writes
     if (req.method !== 'GET' && req.method !== 'HEAD' && !post) return send(req, res, 405, 'Method not allowed', 'text/plain');
     if (url.pathname.startsWith('/api/')) req.visitor = log.visitorId(req, res); // for the visitor log
     switch (url.pathname) {
@@ -518,6 +519,17 @@ const server = http.createServer(async (req, res) => {
         if (log.feedbackToday(req.visitor) >= 5) return json(req, res, 429, { error: 'Thanks! You have sent a lot today; please try again tomorrow.' });
         log.feedback(req, { message, email, page: String(f.page || '').slice(0, 200) });
         return json(req, res, 200, { ok: true });
+      }
+      case '/api/email-reminders': { // the calendar panel: GET ?id= → { email }; POST ?id= { email } (empty turns it off)
+        const id = url.searchParams.get('id');
+        if (!post) return json(req, res, 200, { email: reminders.emailOf(EMAILS, id) });
+        let body = '';
+        for await (const chunk of req) { body += chunk; if (body.length > 2000) return json(req, res, 413, { error: 'Too long' }); }
+        let f = {};
+        try { f = JSON.parse(body || '{}'); } catch { return json(req, res, 400, { error: 'Invalid request' }); }
+        const email = reminders.setEmail(EMAILS, id, f.email);
+        log.event(email ? 'email_on' : 'email_off', req, { cal: log.calKey(id) });
+        return json(req, res, 200, { email });
       }
       case '/api/follows': {
         const id = url.searchParams.get('id');
@@ -607,7 +619,9 @@ if (require.main === module) {
   // shortly after start, then every 6 hours: clear abandoned calendars, write stories ahead of time
   const housekeeping = () => {
     try {
-      const removed = reminders.pruneInactive(FOLLOWS, CAL_ACTIVITY);
+      let keep = new Set();
+      try { keep = new Set(Object.keys(JSON.parse(fs.readFileSync(EMAILS, 'utf8')))); } catch { /* no emails yet */ }
+      const removed = reminders.pruneInactive(FOLLOWS, CAL_ACTIVITY, { keep }); // calendars with email reminders stay
       if (removed.length) console.log(new Date().toISOString(), `removed ${removed.length} calendar(s) unused for ${reminders.INACTIVE_DAYS} days:`, removed.map(l => l.join(',')).join(' | '));
     } catch (e) { console.error(new Date().toISOString(), 'calendar clean-up', e.message); }
     autoStories(); // write the latest stories of well-known and most-viewed companies

@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
-import { CalendarCheck, CalendarX, Loader2, X } from 'lucide-react'
+import { CalendarCheck, CalendarX, Loader2, Mail, Plus, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { calendarUrl, loadCalendar, markSubscribed, setFollow, type CalendarDetails } from '@/lib/calendar'
+import { calendarUrl, loadCalendar, loadEmail, markSubscribed, rememberedEmail, saveEmail, setFollow, type CalendarDetails } from '@/lib/calendar'
 import { date as fmtDate, locale, t } from '@/lib/i18n'
+
+// the one-tap preset: the companies most people want on their earnings calendar ("Big Tech")
+const BIG_TECH = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META', 'TSLA']
 
 const TIMING = { 'before-open': 'before open', 'after-close': 'after close', during: 'during market hours' } as const
 
@@ -14,6 +17,57 @@ function ago(iso: string) {
   const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' })
   for (const [unit, n] of [['day', 86400], ['hour', 3600], ['minute', 60]] as const) if (Math.abs(s) >= n) return rtf.format(Math.round(s / n), unit)
   return rtf.format(0, 'minute')
+}
+
+/** Opt-in email reminders for the companies this calendar follows (the list is collected before sending is set up). */
+function EmailReminders({ open, extra }: { open: boolean; extra?: React.ReactNode }) {
+  const [email, setEmail] = useState<string | null | undefined>(undefined) // undefined: loading
+  const [draft, setDraft] = useState(rememberedEmail)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { if (open) loadEmail().then(setEmail, () => setEmail(null)) }, [open])
+  const save = async (value: string) => {
+    setBusy(true)
+    try {
+      const e = await saveEmail(value)
+      setEmail(e)
+      setDraft(rememberedEmail())
+      toast.success(e ? t('Subscribed') : t('Unsubscribed'))
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (email === undefined) return null
+  return (
+    <div className="space-y-2 border-t px-6 py-4">
+      <div className="flex items-center gap-2 text-sm">
+        <Mail className="size-4 text-muted-foreground" />
+        <span className="font-medium">{t('Email reminders')}</span>
+      </div>
+      {email ? (
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <span className="truncate text-muted-foreground">{t('Subscribed: {email}', { email })}</span>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => save('')}>{t('Unsubscribe')}</Button>
+        </div>
+      ) : (
+        <form className="flex gap-2" onSubmit={e => { e.preventDefault(); if (draft.trim()) save(draft) }}>
+          <input
+            type="email"
+            required
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            maxLength={200}
+            placeholder={t('Your email')}
+            className="h-9 min-w-0 flex-1 rounded-md border bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          />
+          <Button type="submit" size="sm" className="h-9" disabled={busy || !draft.trim()}>{t('Subscribe')}</Button>
+        </form>
+      )}
+      <p className="text-xs text-muted-foreground">{t('Get earnings reminders by email.')}</p>
+      {extra}
+    </div>
+  )
 }
 
 const copy = (text: string, done: string, description: string) =>
@@ -35,6 +89,19 @@ export function MyCalendar({ open, onOpenChange, onFollows, onPick }: {
 
   const unfollow = async (ticker: string) => {
     try { onFollows(await setFollow(ticker, false)) } catch { return toast.error(t('Could not reach the server.')) }
+    refresh()
+  }
+  const [adding, setAdding] = useState(false)
+  const missing = BIG_TECH.filter(x => !data?.items.some(i => i.ticker === x))
+  const followBigTech = async () => {
+    setAdding(true)
+    try {
+      let tickers: string[] = []
+      for (const x of missing) tickers = await setFollow(x, true)
+      onFollows(tickers)
+      toast.success(t('Following Big Tech'))
+    } catch { toast.error(t('Could not reach the server.')) }
+    setAdding(false)
     refresh()
   }
   const fetched = data?.calendar.fetched
@@ -95,6 +162,14 @@ export function MyCalendar({ open, onOpenChange, onFollows, onPick }: {
             {t('Using Google Calendar? Copy the calendar link')}
           </button>
         </div>
+        <EmailReminders
+          open={open}
+          extra={data && missing.length > 0 && (
+            <button type="button" disabled={adding} onClick={followBigTech} title="Apple, Microsoft, NVIDIA, Amazon, Alphabet, Meta, Tesla" className="inline-flex items-center gap-1 text-xs text-chart-up hover:underline disabled:opacity-50">
+              {adding ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />} {t('Also follow Big Tech')}
+            </button>
+          )}
+        />
       </DialogContent>
     </Dialog>
   )

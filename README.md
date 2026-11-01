@@ -68,7 +68,7 @@ The bell on the next-earnings chip follows the company. Each browser gets a priv
 
 ## Deploying
 
-`deploy/deploy.sh` deploys to a Linux server with Docker over SSH: it builds the UI, copies the source, builds the image there and runs it behind [Caddy](https://caddyserver.com) for HTTPS. Put your server (`root@your-server`) in `deploy/.host` or `DEPLOY_HOST`, copy `deploy/Caddyfile.example` to `deploy/Caddyfile` with your domain and email, and put the settings (`SEC_USER_AGENT`, `ANTHROPIC_API_KEY`, `EULERPOOL_API_KEY`) in `/opt/fsv/app.env` on the server. All three files stay out of git.
+`deploy/deploy.sh` deploys to a Linux server with Docker over SSH: it builds the UI, copies the source, builds the image there and runs it behind [Caddy](https://caddyserver.com) for HTTPS. Put your server's SSH address in `deploy/.host` (or `DEPLOY_HOST`), copy `deploy/Caddyfile.example` to `deploy/Caddyfile` with your domain and email, and put the settings (`SEC_USER_AGENT`, `ANTHROPIC_API_KEY`, `EULERPOOL_API_KEY`) in `/opt/fsv/app.env` on the server. All three files stay out of git.
 
 ## API (for SQL and notebooks)
 

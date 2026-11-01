@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { TipCard } from '@/components/tip-card'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { Statements } from '@/lib/types'
-import { hasSubscribed, setFollow } from '@/lib/calendar'
+import { hasEmail, hasSubscribed, setFollow } from '@/lib/calendar'
 import { clockTime, date as fmtDate, t, useLang } from '@/lib/i18n'
 
 /** "Earnings in 3 days · Mon, Nov 3" on the company line: announced by the company, or estimated ("est.") from last year's results date. */
@@ -40,7 +40,11 @@ export function NextEarnings({ ticker, date, basedOn, timing, time, source, foll
       return toast.error(t('Could not reach the server.'))
     }
     if (following) return toast(t('Stopped following {ticker}', { ticker }), { description: t('Its earnings leave your calendar at its next refresh.') })
-    if (hasSubscribed()) return toast.success(t('Following {ticker}', { ticker }), { description: t('Its next earnings are in your calendar, estimated until the company confirms the date, with reminders 1 month, 2 weeks and 1 week before.') })
+    // the moment someone shows interest in an earnings date: offer email reminders (once they have them, just confirm)
+    if (hasSubscribed()) return toast.success(t('Following {ticker}', { ticker }), {
+      description: t('Its next earnings are in your calendar, estimated until the company confirms the date, with reminders 1 month, 2 weeks and 1 week before.'),
+      ...(hasEmail() ? {} : { duration: 15000, action: { label: t('Email me too'), onClick: onOpenCalendar } }),
+    })
     toast.success(t('Following {ticker}', { ticker }), {
       description: t('Sync your calendar once; every company you follow then shows up there (estimated until the company confirms the date), with reminders 1 month, 2 weeks and 1 week before.'),
       duration: 30000,

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { t } from '@/lib/i18n'
 import { visitorHeaders } from '@/lib/visitor'
+import { rememberEmail, rememberedEmail } from '@/lib/calendar'
 
 const CONTACT = 'ben.chin.credit@gmail.com' // for people who'd rather write directly
 
@@ -12,7 +13,7 @@ const CONTACT = 'ben.chin.credit@gmail.com' // for people who'd rather write dir
 export function Feedback() {
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(rememberedEmail)
   const [sending, setSending] = useState(false)
 
   const send = async (e: React.FormEvent) => {
@@ -27,9 +28,9 @@ export function Feedback() {
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || t('Could not reach the server.'))
+      rememberEmail(email)
       toast.success(t('Thanks for the feedback!'), { description: email ? t("We'll keep you posted.") : undefined })
       setMessage('')
-      setEmail('')
       setOpen(false)
     } catch (err) {
       toast.error((err as Error).message)

@@ -290,17 +290,17 @@ export function StatementTable({ block, tab, freq, modes, units, reported, estim
                     <span className="inline-flex items-center gap-1 text-[13px] font-medium text-foreground">
                       <PeriodLabel period={p} reported={reported[p.key]} />
                       <MagazineIcon period={p} />
-                      {/* remove the oldest period: in the corner on hover with a mouse; on touch screens after the label, with a larger invisible tap area */}
+                      {/* remove the oldest period: in the very corner on hover with a mouse (clear of the story icon); on touch screens after the label, with a larger invisible tap area */}
                       {j === vis.length - 1 && j > 0 && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="absolute top-1 right-1 size-6 rounded-md text-muted-foreground opacity-0 pointer-coarse:relative pointer-coarse:top-auto pointer-coarse:right-auto pointer-coarse:-mr-1.5 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-3 pointer-coarse:after:-right-3 pointer-coarse:after:-left-0.5 transition-opacity group-hover/col:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 [@media(hover:none)]:opacity-70"
+                          className="absolute top-0 right-0 size-4 rounded text-muted-foreground opacity-0 pointer-coarse:size-6 pointer-coarse:rounded-md pointer-coarse:relative pointer-coarse:top-auto pointer-coarse:right-auto pointer-coarse:-mr-1.5 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-3 pointer-coarse:after:-right-3 pointer-coarse:after:-left-0.5 transition-opacity group-hover/col:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 [@media(hover:none)]:opacity-70"
                           aria-label={t('Remove {period}', { period: p.label })}
                           title={t('Remove {period}', { period: p.label })}
                           onClick={() => onExtra(k - 1 - base)}
                         >
-                          <X className="size-3.5" />
+                          <X className="size-3 pointer-coarse:size-3.5" />
                         </Button>
                       )}
                     </span>
