@@ -1,0 +1,9 @@
+# keep secrets, local data and build output out of the image
+node_modules
+cache
+data
+.sec-user-agent
+.anthropic-api-key
+.claude
+.env
+*.log

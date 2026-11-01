@@ -1,0 +1,16 @@
+node_modules/
+cache/
+data/
+/public/
+.sec-user-agent
+.anthropic-api-key
+.env
+*.log
+.DS_Store
+# private: server address, live HTTPS config, ops notes, local Claude settings, site-ownership token
+deploy/.host
+deploy/Caddyfile
+deploy/RUNBOOK.md
+.claude/settings.json
+.claude/settings.local.json
+web/public/google*.html

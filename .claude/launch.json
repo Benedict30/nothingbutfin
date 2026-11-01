@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "website",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "HOST=0.0.0.0 SEC_USER_AGENT=\"$(cat .sec-user-agent)\" node server.js"],
+      "port": 3000
+    }
+  ]
+}

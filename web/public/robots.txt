@@ -1,0 +1,6 @@
+# personal calendar links (/cal/) are private; the API isn't for crawling
+User-agent: *
+Disallow: /api/
+Disallow: /cal/
+
+Sitemap: https://nothingbutfin.com/sitemap.xml

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <!-- phones get the desktop layout, scaled to fit -->
+    <meta name="viewport" content="width=1080" />
+    <meta name="color-scheme" content="dark" />
+    <title>Nothing But Fin · Financial statements and earnings for US stocks</title>
+    <!-- search results and link previews -->
+    <meta name="description" content="Income statements, balance sheets and cash flows for every US-listed company, straight from SEC filings. Earnings dates with calendar reminders, and AI-written stories on each quarter. Free." />
+    <link rel="canonical" href="https://nothingbutfin.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Nothing But Fin" />
+    <meta property="og:title" content="Nothing But Fin · Financial statements and earnings for US stocks" />
+    <meta property="og:description" content="Financial statements, earnings dates and AI stories for every US-listed company, from SEC filings." />
+    <meta property="og:url" content="https://nothingbutfin.com/" />
+    <meta property="og:image" content="https://nothingbutfin.com/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Nothing But Fin","alternateName":"nothingbutfin","url":"https://nothingbutfin.com/"}</script>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <!-- installable as an app (Add to Home Screen) -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Fin" />
+    <script>
+      // start loading the company's figures (and logo) while the app's code downloads (picked up by App.tsx)
+      try {
+        var t = (new URLSearchParams(location.search).get('ticker') || JSON.parse(localStorage.getItem('fsv-prefs') || '{}').ticker || 'AAPL').toUpperCase()
+        // anonymous visitor id for counting visits (see src/lib/visitor.ts)
+        var v = localStorage.getItem('fsv-visitor')
+        if (!v) localStorage.setItem('fsv-visitor', (v = Array.from(crypto.getRandomValues(new Uint8Array(16)), function (b) { return ('0' + b.toString(16)).slice(-2) }).join('')))
+        window.__early = { ticker: t, res: fetch('api/statements?ticker=' + encodeURIComponent(t), { headers: { 'X-Visitor': v } }) }
+        new Image().src = 'logo/' + encodeURIComponent(t) + '.png'
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
