@@ -9,6 +9,7 @@ import { Toaster } from 'sonner'
 import { MagazineProvider } from '@/components/magazine'
 import { NextEarnings } from '@/components/next-earnings'
 import { MyCalendar } from '@/components/my-calendar'
+import { Feedback } from '@/components/feedback'
 import { InstallApp } from '@/components/install-app'
 import { loadFollows } from '@/lib/calendar'
 import { rememberRecent, Search } from '@/components/search'
@@ -427,6 +428,7 @@ export default function App() {
               <br />{t('For information only, not investment advice. Earnings dates are estimates; stories are written by AI and can contain mistakes.')}
             </div>
             <div className="flex items-start gap-5">
+              <Feedback />
               {data.source.filings && (
                 <a className="inline-flex items-center gap-1.5 text-foreground underline-offset-4 hover:underline" href={data.source.filings} target="_blank" rel="noopener">
                   {t('Filings on EDGAR')} <ExternalLink className="size-4" />

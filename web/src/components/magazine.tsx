@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { ChevronLeft, ChevronRight, ExternalLink, Eye, KeyRound, Loader2, Newspaper, RotateCw, Telescope } from 'lucide-react'
+import { ExternalLink, Eye, KeyRound, Loader2, Mail, Newspaper, RotateCw, Telescope } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { longDate, t, useLang, type Lang } from '@/lib/i18n'
+import { locale, longDate, t, useLang, type Lang } from '@/lib/i18n'
 import type { Freq, Period, Statements } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { visitorHeaders } from '@/lib/visitor'
@@ -34,8 +34,15 @@ type Ok = {
 interface MagazineResponse {
   filing: { form: string; filed: string; url: string } | null
   release: { filed: string; url: string } | null
-  ai: Ok | { status: 'none' | 'generating' | 'no-key' } | { status: 'error'; message: string }
+  ai: Ok | { status: 'none' | 'generating' | 'no-key' | 'limit' | 'closed' } | { status: 'error'; message: string }
+  free?: Free // new stories this visitor may still have written for free
 }
+interface Free { limit: number | null; left: number | null; until: string; closed: boolean } // limit/left null: no per-visitor limit
+const WAITLIST = 'ben.chin.credit@gmail.com'
+/** When new stories end, in the reader's own timezone and language: "Nov 10, 2026, 11:00 AM EST" */
+const untilText = (until: string) =>
+  new Date(until).toLocaleString(locale(), { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+const freeNote = (f: Free) => f.left == null ? t('Available until {date}', { date: untilText(f.until) }) : t('{left} of {limit} stories left · available until {date}', { left: f.left, limit: f.limit ?? 0, date: untilText(f.until) })
 type State = 'none' | 'generating' | 'ready' | 'error'
 
 const MOOD = { // labels are translated where shown
@@ -68,8 +75,8 @@ function Paragraphs({ text, dropCap = false }: { text: string; dropCap?: boolean
   )
 }
 
-/** The story as pages, one idea each: opening, quotes, metrics, key points, each section, outlook, watch list. */
-function storyPages(a: Article): { key: string; node: React.ReactNode }[] {
+/** The story's sections in reading order: opening, quotes, metrics, key points, each section, outlook, watch list. */
+function storySections(a: Article): { key: string; node: React.ReactNode }[] {
   const pages: { key: string; node: React.ReactNode }[] = [{ key: 'lede', node: <Paragraphs text={a.lede} dropCap /> }]
   if (a.voices.length) pages.push({ key: 'voices', node: (
 <section className="space-y-4">
@@ -158,71 +165,14 @@ function storyPages(a: Article): { key: string; node: React.ReactNode }[] {
   return pages
 }
 
-/**
- * Reads the story a page at a time: the cover (headline) opens the first page and the sources
- * close the last. ← → keys, the buttons, the progress bar or a swipe move between pages.
- */
-function PagedStory({ a, cover, end }: { a: Article; cover: React.ReactNode; end: React.ReactNode }) {
-  const pages = storyPages(a)
-  const [page, setPage] = useState(0)
-  const top = useRef<HTMLDivElement>(null)
-  const last = pages.length - 1
-  const go = (n: number) => {
-    const next = Math.max(0, Math.min(last, n))
-    if (next === page) return
-    setPage(next)
-    top.current?.scrollIntoView({ block: 'start' })
-  }
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight') go(page + 1)
-      if (e.key === 'ArrowLeft') go(page - 1)
-    }
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  })
-  const swipe = useRef<{ x: number; y: number } | null>(null)
+/** The whole story on one scrolling page: headline, then each section, then the sources. */
+function Story({ a, cover, end }: { a: Article; cover: React.ReactNode; end: React.ReactNode }) {
   return (
-    <div
-      ref={top}
-      className="flex flex-1 flex-col gap-8"
-      onTouchStart={e => { swipe.current = { x: e.touches[0].clientX, y: e.touches[0].clientY } }}
-      onTouchEnd={e => {
-        const s0 = swipe.current, p = e.changedTouches[0]
-        swipe.current = null
-        if (!s0) return
-        const dx = p.clientX - s0.x, dy = p.clientY - s0.y
-        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(page + (dx < 0 ? 1 : -1)) // a sideways swipe
-      }}
-    >
-      {page === 0 && cover}
-      <div key={pages[page].key} className="animate-in fade-in-0 duration-300">{pages[page].node}</div>
-      {page === last && end}
-
-      <nav className="sticky bottom-0 -mx-8 -mb-8 mt-auto space-y-3 border-t bg-background px-8 pt-3 pb-4" aria-label={t('Pages')}>
-        <div className="flex gap-1">
-          {pages.map((p, k) => (
-            <button
-              key={p.key}
-              type="button"
-              aria-label={`${k + 1} / ${pages.length}`}
-              aria-current={k === page ? 'step' : undefined}
-              onClick={() => go(k)}
-              className={cn('h-1 flex-1 rounded-full transition-colors', k <= page ? 'bg-chart-up' : 'bg-muted hover:bg-muted-foreground/40')}
-            />
-          ))}
-        </div>
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" size="sm" onClick={() => go(page - 1)} disabled={page === 0} aria-label={t('Previous page')}>
-            <ChevronLeft className="size-4" /> {t('Previous')}
-          </Button>
-          <span className="text-xs text-muted-foreground tabular-nums">{page + 1} / {pages.length}</span>
-          <Button variant={page === last ? 'ghost' : 'default'} size="sm" onClick={() => go(page + 1)} disabled={page === last} aria-label={t('Next page')}>
-            {t('Next')} <ChevronRight className="size-4" />
-          </Button>
-        </div>
-      </nav>
-    </div>
+    <article className="space-y-10">
+      {cover}
+      {storySections(a).map(p => <div key={p.key}>{p.node}</div>)}
+      {end}
+    </article>
   )
 }
 
@@ -342,7 +292,7 @@ function Body({ data, period, freq, company, onGenerate }: { data: MagazineRespo
           {ok && <p>{t("Written by Claude from the {sources}. Quotes, metrics and guidance are checked word for word against those sources, and anything that doesn't match is removed. AI can still make mistakes, so check anything important against the filing.", { sources: ok.sources.join(' and the ') })}</p>}
         </footer>
   )
-  if (art) return <PagedStory a={art} cover={header} end={footer} />
+  if (art) return <Story a={art} cover={header} end={footer} />
   return (
     <article className="space-y-8">
       {header}
@@ -365,6 +315,25 @@ function Body({ data, period, freq, company, onGenerate }: { data: MagazineRespo
             <div className="text-muted-foreground">
               Save the key in a file named <code className="rounded bg-muted px-1">.anthropic-api-key</code> in the project folder (or set <code className="rounded bg-muted px-1">ANTHROPIC_API_KEY</code>) and reopen this page.
             </div>
+          </div>
+        </div>
+      )}
+      {(status === 'limit' || status === 'closed' || (status === 'none' && data?.free && (data.free.closed || (data.free.left != null && data.free.left <= 0)))) && (
+        <div className="flex gap-3 rounded-lg border border-chart-up/40 bg-chart-up/10 p-4 text-sm">
+          <Newspaper className="mt-0.5 size-4 shrink-0 text-chart-up" />
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <div className="font-medium">
+                {status === 'closed' || data?.free?.closed
+                  ? t('New AI stories ended on {date}, to keep AI costs under control', { date: untilText(data!.free!.until) })
+                  : t("You've used your {n} stories", { n: data?.free?.limit ?? 3 })}
+              </div>
+              <div className="text-muted-foreground">{t('Stories already written can still be read. Interested in a subscription to keep this feature? Join the waitlist.')}</div>
+            </div>
+            <Button size="sm" asChild>
+              <a href={`mailto:${WAITLIST}?subject=${encodeURIComponent('Nothing But Fin: subscription waitlist')}`}><Mail className="size-3.5" /> {t('Join the waitlist')}</a>
+            </Button>
+            <div className="text-xs text-muted-foreground">{WAITLIST}</div>
           </div>
         </div>
       )}
@@ -412,10 +381,10 @@ export function MagazineProvider({ ticker, freq, company, periods, onNavigate, c
   const tid = (t: Target) => `story-${t.ticker}-${t.freq}-${t.key}-${t.lang}` // one toast per story, updated in place
   const name = (t: Target) => `${t.company} · ${t.label}`
   const watch = (t: Target) => setPending(list => [...list.filter(x => !same(x, t)), t])
-  const loading = (x: Target) =>
-    toast.loading(t('Generating {name} story…', { name: name(x) }), { id: tid(x), description: t('About a minute. Keep browsing; this updates when it’s ready.'), duration: Infinity })
+  const loading = (x: Target, note?: string) =>
+    toast.loading(t('Generating {name} story…', { name: name(x) }), { id: tid(x), description: t('About a minute. Keep browsing; this updates when it’s ready.') + (note ? ' ' + note : ''), duration: Infinity })
   const ready = (x: Target) =>
-    toast.success(t('{name} story is ready', { name: name(x) }), { id: tid(x), description: t('Saved, so opening it again is free.'), duration: 20000, action: { label: t('Open'), onClick: () => show(x) } })
+    toast.success(t('{name} story is ready', { name: name(x) }), { id: tid(x), description: t('Saved, so you can open it again any time.'), duration: 20000, action: { label: t('Open'), onClick: () => show(x) } })
   const failed = (x: Target, message: string) =>
     toast.error(t('{name} story could not be generated', { name: name(x) }), { id: tid(x), description: message, duration: 20000, action: { label: t('Retry'), onClick: () => start(x) } })
 
@@ -485,6 +454,13 @@ export function MagazineProvider({ ticker, freq, company, periods, onNavigate, c
     try {
       const j = await (await fetch('api/magazine?' + qs(x), { method: 'POST', headers: visitorHeaders() })).json()
       const status = j.ai?.status
+      if (status === 'limit' || status === 'closed') {
+        toast.dismiss(tid(x)) // no story is being written: the window explains why
+        show(x)
+        loadStates()
+        return
+      }
+      if (status === 'generating' && j.free && !j.free.closed) loading(x, freeNote(j.free))
       if (status === 'generating') watch(x)
       else if (status === 'ok') ready(x) // already saved
       else if (status === 'no-key') failed(x, 'Add an Anthropic API key: save it in .anthropic-api-key in the project folder.')
@@ -514,12 +490,18 @@ export function MagazineProvider({ ticker, freq, company, periods, onNavigate, c
       {children}
       <Dialog open={!!(visible && period)} onOpenChange={o => { if (!o) { setTarget(null); setData(null) } }}>
         {visible && period && (
-          <DialogContent className="flex h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px]" /* a fixed height: paging keeps the controls in one place */>
+          <DialogContent className="flex max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px]" /* centred; scrolls inside when the story is taller than 88% of the screen */>
             <div className="flex shrink-0 items-center justify-between border-b bg-background px-8 py-3">
               <DialogTitle className="font-serif text-lg font-semibold tracking-tight italic">The Quarterly</DialogTitle>
               <DialogDescription className="pr-8 text-xs text-muted-foreground">{company.name} · {period.label}</DialogDescription>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 pt-6 pb-8">
+            {data?.free && !data.free.closed && (
+              <div className="shrink-0 border-b bg-chart-up/10 px-8 py-2 text-xs leading-relaxed text-muted-foreground">
+                {t('New AI stories are available until {date}, to keep AI costs under control. Want to keep this feature with a subscription?', { date: untilText(data.free.until) })}{' '}
+                <a href={`mailto:${WAITLIST}?subject=${encodeURIComponent('Nothing But Fin: subscription waitlist')}`} className="font-medium whitespace-nowrap text-chart-up hover:underline">{t('Join the waitlist')}</a>
+              </div>
+            )}
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 pt-6">
               <Body data={data} period={period} freq={freq} company={company} onGenerate={() => start(visible)} />
             </div>
           </DialogContent>

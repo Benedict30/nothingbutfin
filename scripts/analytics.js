@@ -73,3 +73,7 @@ if (views.length) {
     console.log(`  ${d}  ${pad(v.length, 5)}${pad(new Set(v.map(e => e.v)).size, 5)}${byDay[d].length - v.length}`);
   }
 }
+
+const notes = read('feedback.jsonl').filter(f => f.t >= since);
+console.log(`\nFeedback (${notes.length}):`);
+for (const f of notes.slice(-20)) console.log(`  ${f.t.slice(0, 16).replace('T', ' ')} ${f.country || '--'}${f.email ? ' · ' + f.email : ''}${f.page ? ' · ' + f.page : ''}\n    ${f.message.replace(/\s+/g, ' ').slice(0, 300)}`);

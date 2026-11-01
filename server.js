@@ -43,12 +43,14 @@ const preliminary = require('./lib/preliminary');
 const reminders = require('./lib/reminders');
 const log = require('./lib/log');
 const estimates = require('./lib/estimates');
+const quota = require('./lib/quota');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 const UA = (process.env.SEC_USER_AGENT || '').trim();
 const CACHE_DIR = path.resolve(process.env.CACHE_DIR || path.join(__dirname, 'cache'));
 const FOLLOWS = path.join(path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data')), 'follows.json'); // personal earnings calendars
+const DATA_DIR = path.dirname(FOLLOWS); // calendars, logs, free-story counts
 const CAL_ACTIVITY = path.join(path.dirname(FOLLOWS), 'calendar-activity.json'); // when each calendar was last used
 const FACTS_TTL = (+process.env.FACTS_TTL_HOURS || 12) * 3600e3;
 const TICKERS_TTL = 24 * 3600e3;
@@ -201,6 +203,64 @@ async function earningsFeed(id, origin) {
   return reminders.buildIcs(events, { feed: true });
 }
 
+// ------------------------------------------------------------ stories written ahead of time
+// So most readers find a story ready (and never touch their free quota), the latest quarter and year
+// of well-known and most-viewed companies are written in the background, one at a time, in English.
+// An optional monthly budget (STORY_AUTO_BUDGET_USD) caps the spend; nothing is written after new stories end (lib/quota.js).
+const AUTO_TICKERS = (process.env.STORY_AUTO_TICKERS || 'AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,AVGO,PLTR,NFLX,AMD,JPM,V,MA,COST,WMT,LLY,ORCL,UNH,CRM,BRK-B,XOM,JNJ,PG,HD,KO,PEP,ABBV,MRK,BAC,CVX,ADBE,INTC,CSCO,QCOM,TXN,IBM,NOW,INTU,UBER,ABNB,PYPL,COIN,HOOD,SNOW,CRWD,PANW,NKE,SBUX,MCD,DIS,T,VZ,TMUS,CMCSA,BA,CAT,GE,HON,LMT,RTX,DE,UPS,F,GM,RIVN,SOFI,MU,SMCI,DELL,ANET,MRVL,PFE,TMO,ABT,ISRG,GILD,AMGN,VRTX,CVS,GS,MS,C,WFC,SCHW,BLK,AXP,SPGI,DASH,RBLX,TTD,SNAP,PINS,RDDT,DKNG,EBAY,TGT,LOW,BKNG,NEE').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+const AUTO_BUDGET = process.env.STORY_AUTO_BUDGET_USD ? +process.env.STORY_AUTO_BUDGET_USD || 0 : Infinity; // per month; none by default
+const AUTO_FILE = path.join(DATA_DIR, 'story-auto.json'); // { 'YYYY-MM': usd }
+
+/** The 10 companies viewed most in the last 30 days (data/events.jsonl). */
+function mostViewed() {
+  const since = new Date(Date.now() - 30 * 86400e3).toISOString(), n = new Map();
+  try {
+    for (const line of fs.readFileSync(path.join(DATA_DIR, 'events.jsonl'), 'utf8').split('\n')) {
+      if (!line.includes('"view"')) continue;
+      try { const e = JSON.parse(line); if (e.type === 'view' && e.t >= since && e.ticker) n.set(e.ticker, (n.get(e.ticker) || 0) + 1); } catch {}
+    }
+  } catch { /* no views yet */ }
+  return [...n].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([t]) => t);
+}
+
+let autoRunning = false;
+async function autoStories() {
+  if (autoRunning || !AUTO_BUDGET || quota.closed() || !magazine.apiKey()) return;
+  autoRunning = true;
+  const month = new Date().toISOString().slice(0, 7);
+  let spent = {};
+  try { spent = JSON.parse(fs.readFileSync(AUTO_FILE, 'utf8')); } catch {}
+  let written = 0;
+  try {
+    for (const ticker of [...new Set([...AUTO_TICKERS, ...mostViewed()])]) {
+      for (const freq of ['q', 'a']) {
+        if ((spent[month] || 0) >= AUTO_BUDGET) return;
+        try {
+          const r = await statements(ticker);
+          const p = (freq === 'a' ? r.annual : r.quarterly).periods.find(x => !x.projected && !['TTM', 'PROJ', 'PROJQ'].includes(x.key));
+          if (!p) continue;
+          const m = await magazineFor(ticker, freq, p.key, () => null, 'en');
+          if (m.ai.status !== 'generating' || !m.filing) continue; // already written, being written, or no filing
+          let story = null;
+          for (let i = 0; i < 60 && !story; i++) { // up to 5 minutes
+            await new Promise(res => setTimeout(res, 5000));
+            story = await magazine.readArticle(CACHE_DIR, m.filing.accn, 'en');
+            if (!story && magazine.jobState(m.filing.accn, 'en')?.state === 'error') break;
+          }
+          if (!story) continue;
+          spent[month] = Math.round(((spent[month] || 0) + (story.cost || 0)) * 1e4) / 1e4;
+          fs.writeFileSync(AUTO_FILE, JSON.stringify(spent));
+          written++;
+          console.log(new Date().toISOString(), 'auto story', ticker, p.label, '$' + (story.cost || 0).toFixed(3), `(this month $${spent[month].toFixed(2)}${AUTO_BUDGET < Infinity ? ' of $' + AUTO_BUDGET : ''})`);
+        } catch (e) { console.error(new Date().toISOString(), 'auto story', ticker, freq, e.message); }
+      }
+    }
+  } finally {
+    autoRunning = false;
+    if (written) console.log(new Date().toISOString(), `auto stories: ${written} written`);
+  }
+}
+
 /** When each period's results came out: { periodKey: { release?: date, filing?: { form, filed } } }. */
 function reportDates(blk, subs, annual) {
   const out = {};
@@ -253,13 +313,24 @@ async function pressReleaseStory(r, pre, start, lang) {
   const saved = await magazine.readArticle(CACHE_DIR, filing.accn, lang);
   const job = magazine.jobState(filing.accn, lang);
   const ai = saved
-    || (start ? magazine.startArticle({ cacheDir: CACHE_DIR, filing, getSources, company: r.company, period: pre.period, figures, lang })
+    || (start ? begin(start, job, () => magazine.startArticle({ cacheDir: CACHE_DIR, filing, getSources, company: r.company, period: pre.period, figures, lang }))
       : job ? { status: job.state, message: job.message }
       : { status: magazine.apiKey() ? 'none' : 'no-key' });
   return { period: pre.period, filing: null, release, ai };
 }
 
 /** GET: the saved story or its state (never starts one). POST (start = true): starts writing it. */
+/**
+ * Starts a story unless it is already being written; `allow()` (the free quota, lib/quota.js) is asked
+ * only for a story that would really be written now, and returns why not ({ status }) or null.
+ */
+function begin(allow, job, run) {
+  if (job && job.state === 'generating') return { status: 'generating' };
+  if (!magazine.apiKey()) return { status: 'no-key' };
+  return allow() || run();
+}
+
+/** A period's story: saved, being written, or (with `start`, a quota check) started now. */
 async function magazineFor(ticker, freq, key, start, lang) {
   const r = await statements(ticker);
   const blk = freq === 'a' ? r.annual : r.quarterly;
@@ -302,7 +373,7 @@ async function magazineFor(ticker, freq, key, start, lang) {
   const saved = await magazine.readArticle(CACHE_DIR, filing.accn, lang);
   const job = magazine.jobState(filing.accn, lang);
   const ai = saved
-    || (start ? magazine.startArticle({ cacheDir: CACHE_DIR, filing, getSources, company: r.company, period: p, figures, lang })
+    || (start ? begin(start, job, () => magazine.startArticle({ cacheDir: CACHE_DIR, filing, getSources, company: r.company, period: p, figures, lang }))
       : job ? { status: job.state, message: job.message }
       : { status: magazine.apiKey() ? 'none' : 'no-key' });
   return { period: p, filing, release: release && release.url ? { filed: release.filed, url: release.url } : null, ai };
@@ -431,10 +502,23 @@ async function serveStatic(req, res, pathname) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
-    const post = req.method === 'POST' && ['/api/magazine', '/api/follows'].includes(url.pathname); // the only writes
+    const post = req.method === 'POST' && ['/api/magazine', '/api/follows', '/api/feedback'].includes(url.pathname); // the only writes
     if (req.method !== 'GET' && req.method !== 'HEAD' && !post) return send(req, res, 405, 'Method not allowed', 'text/plain');
     if (url.pathname.startsWith('/api/')) req.visitor = log.visitorId(req, res); // for the visitor log
     switch (url.pathname) {
+      case '/api/feedback': { // the footer's feedback form: { message, email?, page? }, saved to data/feedback.jsonl
+        if (!post) return json(req, res, 405, { error: 'POST only' });
+        let body = '';
+        for await (const chunk of req) { body += chunk; if (body.length > 8000) return json(req, res, 413, { error: 'Too long' }); }
+        let f = {};
+        try { f = JSON.parse(body); } catch { return json(req, res, 400, { error: 'Invalid request' }); }
+        const message = String(f.message || '').trim().slice(0, 2000), email = String(f.email || '').trim().slice(0, 200);
+        if (!message) return json(req, res, 400, { error: 'Please write a message' });
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(req, res, 400, { error: 'That email address looks wrong' });
+        if (log.feedbackToday(req.visitor) >= 5) return json(req, res, 429, { error: 'Thanks! You have sent a lot today; please try again tomorrow.' });
+        log.feedback(req, { message, email, page: String(f.page || '').slice(0, 200) });
+        return json(req, res, 200, { ok: true });
+      }
       case '/api/follows': {
         const id = url.searchParams.get('id');
         const tickers = post ? reminders.setFollow(FOLLOWS, id, url.searchParams.get('ticker'), url.searchParams.get('on') === '1') : reminders.follows(FOLLOWS, id);
@@ -474,7 +558,8 @@ const server = http.createServer(async (req, res) => {
       }
       case '/api/magazine': {
         const q = url.searchParams, lang = magazine.langOf(q.get('lang'));
-        const m = await magazineFor(q.get('ticker'), q.get('freq'), q.get('period'), post, lang);
+        const m = await magazineFor(q.get('ticker'), q.get('freq'), q.get('period'), post && (() => quota.take(DATA_DIR, req)), lang);
+        m.free = quota.status(DATA_DIR, req); // free stories left for this visitor
         const story = { ticker: String(q.get('ticker')).toUpperCase(), freq: q.get('freq'), period: q.get('period'), label: m.period && m.period.label, lang };
         if (post && m.ai.status === 'generating') log.event('story_generate', req, story);
         if (!post && q.get('open') === '1' && m.ai.status === 'ok') log.event('story_open', req, story); // someone opened it to read
@@ -519,12 +604,13 @@ if (require.main === module) {
     console.log('Nothing But Fin → http://' + (HOST === '0.0.0.0' ? 'localhost' : HOST) + ':' + PORT);
     if (!UA || !/@/.test(UA)) console.warn('⚠  SEC_USER_AGENT is not set (needs an org name and contact email). EDGAR requests will fail until it is.');
   });
-  // shortly after start, then every 6 hours: clear abandoned calendars
+  // shortly after start, then every 6 hours: clear abandoned calendars, write stories ahead of time
   const housekeeping = () => {
     try {
       const removed = reminders.pruneInactive(FOLLOWS, CAL_ACTIVITY);
       if (removed.length) console.log(new Date().toISOString(), `removed ${removed.length} calendar(s) unused for ${reminders.INACTIVE_DAYS} days:`, removed.map(l => l.join(',')).join(' | '));
     } catch (e) { console.error(new Date().toISOString(), 'calendar clean-up', e.message); }
+    autoStories(); // write the latest stories of well-known and most-viewed companies
   };
   setTimeout(housekeeping, 60e3);
   setInterval(housekeeping, 6 * 3600e3);

@@ -116,6 +116,14 @@ export function StatementTable({ block, tab, freq, modes, units, reported, estim
   while (fit < candidates.length && used + need[fit] <= avail) used += need[fit++]
   const base = Math.max(1, fit)
   const k = Math.max(1, Math.min(candidates.length, base + extra))
+  // a short fade for an added period (columns from `cols` on); cleared once things settle, so loading
+  // a company or switching tabs doesn't animate
+  const motion = useRef({ cols: Infinity })
+  useEffect(() => {
+    const id = setTimeout(() => { motion.current = { cols: Infinity } }, 500)
+    return () => clearTimeout(id)
+  })
+  const fadeCol = (j: number) => j >= motion.current.cols && 'animate-in fade-in-0 duration-300'
   const older = k < candidates.length
   const vis = candidates.slice(0, k).map(i => all[i])
   const rows = allRows
@@ -278,7 +286,7 @@ export function StatementTable({ block, tab, freq, modes, units, reported, estim
                 <TableHead className={cn('left-0 h-11 pl-4 text-muted-foreground', pinned(false))}>{t('Period')}</TableHead>
                 <TableHead className={pinned(false)} style={{ left: LABEL_W - 1 }} />
                 {vis.map((p, j) => (
-                  <TableHead key={p.key} className="group/col relative h-11 pr-4 text-right">
+                  <TableHead key={p.key} className={cn('group/col relative h-11 pr-4 text-right', fadeCol(j))}>
                     <span className="inline-flex items-center gap-1 text-[13px] font-medium text-foreground">
                       <PeriodLabel period={p} reported={reported[p.key]} />
                       <MagazineIcon period={p} />
@@ -306,7 +314,7 @@ export function StatementTable({ block, tab, freq, modes, units, reported, estim
                         <button
                           type="button"
                           className="relative inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5"
-                          onClick={() => onExtra(k + 1 - base)}
+                          onClick={() => { motion.current.cols = k; onExtra(k + 1 - base) }}
                           aria-label={t('Add {period}', { period: all[candidates[k]].label })}
                         >
                           <Plus className="size-4" />
@@ -326,8 +334,8 @@ export function StatementTable({ block, tab, freq, modes, units, reported, estim
                 <TableRow key={name} className="group hover:bg-transparent">
                   <TableCell className={cn('left-0 pl-4 text-muted-foreground', pinned(false))}>{t(name)}</TableCell>
                   <TableCell className={pinned(false)} style={{ left: LABEL_W - 1 }} />
-                  {vis.map(p => (
-                    <TableCell key={p.key} className="pr-4 text-right tabular-nums">
+                  {vis.map((p, j) => (
+                    <TableCell key={p.key} className={cn('pr-4 text-right tabular-nums', fadeCol(j))}>
                       {get(p)}
                     </TableCell>
                   ))}
@@ -359,6 +367,7 @@ export function StatementTable({ block, tab, freq, modes, units, reported, estim
                       onContextMenu={e => e.preventDefault()}
                       className={cn(
                         'cursor-cell py-2.5 pr-4 text-right align-middle tabular-nums select-none [-webkit-touch-callout:none]',
+                        fadeCol(j),
                         selected.has(cellId(ri, j)) && 'bg-chart-up/15 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--chart-up)_55%,transparent)]',
                       )}
                     >
