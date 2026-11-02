@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
 import { MagazineProvider } from '@/components/magazine'
 import { NextEarnings } from '@/components/next-earnings'
 import { MyCalendar } from '@/components/my-calendar'
@@ -134,6 +134,10 @@ export default function App() {
   const [follows, setFollows] = useState<string[]>([]) // companies in this person's earnings calendar
   const [calendarOpen, setCalendarOpen] = useState(false)
   useEffect(() => { loadFollows().then(setFollows).catch(() => {}) }, [])
+  // confirms the owner's ?exclude-me link (see index.html)
+  useEffect(() => {
+    try { if (sessionStorage.getItem('fsv-excluded')) { sessionStorage.removeItem('fsv-excluded'); toast.success('This browser is excluded from analytics') } } catch { /* storage unavailable */ }
+  }, [])
   const update = (p: Partial<Prefs>) => setPrefs(cur => ({ ...cur, ...p }))
 
   useEffect(() => savePrefs(prefs), [prefs])

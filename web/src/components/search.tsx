@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Search as SearchIcon } from 'lucide-react'
+import { Search as SearchIcon, X } from 'lucide-react'
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from '@/components/ui/command'
 import { Command as Cmdk } from 'cmdk'
 import { t, useLang } from '@/lib/i18n'
@@ -12,6 +12,12 @@ export function rememberRecent(c: SearchResult) {
   if (!c.ticker) return
   const list = [c, ...loadRecent().filter(x => x.ticker !== c.ticker)].slice(0, 6)
   try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)) } catch { /* storage unavailable */ }
+}
+/** Takes one company off the recent list; returns what's left. */
+function forgetRecent(ticker: string): SearchResult[] {
+  const list = loadRecent().filter(x => x.ticker !== ticker)
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)) } catch { /* storage unavailable */ }
+  return list
 }
 
 /** Prominent company / ticker search. "/" focuses it; an empty box lists recent companies; Enter on no match tries the text as a ticker. */
@@ -105,6 +111,25 @@ export function Search({ onPick }: { onPick: (ticker: string, company?: SearchRe
                 <span className="w-14 font-medium">{r.ticker}</span>
                 <span className="flex-1 truncate text-muted-foreground">{r.name}</span>
                 <span className="text-xs tracking-wide text-muted-foreground uppercase">{r.exchange}</span>
+                {!q.trim() && (
+                  // remove from recent; pressing it keeps the list open and doesn't open the company
+                  <button
+                    type="button"
+                    aria-label={t('Remove {ticker} from recent', { ticker: r.ticker })}
+                    title={t('Remove {ticker} from recent', { ticker: r.ticker })}
+                    onPointerDown={e => e.preventDefault()}
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={e => {
+                      e.stopPropagation()
+                      const left = forgetRecent(r.ticker)
+                      setRecent(left)
+                      if (!left.length) setOpen(false)
+                    }}
+                    className="-my-1 -mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:size-9"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
               </CommandItem>
             ))}
           </CommandGroup>

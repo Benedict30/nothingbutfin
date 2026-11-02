@@ -27,6 +27,15 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Fin" />
     <script>
+      // the owner's ?exclude-me link: this browser's visits are no longer logged (a cookie the server checks)
+      try {
+        var q = new URLSearchParams(location.search)
+        if (q.has('exclude-me')) {
+          document.cookie = 'nolog=1; Max-Age=31536000; Path=/; SameSite=Lax; Secure'
+          q.delete('exclude-me'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : ''))
+          sessionStorage.setItem('fsv-excluded', '1')
+        }
+      } catch (e) {}
       // start loading the company's figures (and logo) while the app's code downloads (picked up by App.tsx)
       try {
         var t = (new URLSearchParams(location.search).get('ticker') || JSON.parse(localStorage.getItem('fsv-prefs') || '{}').ticker || 'AAPL').toUpperCase()

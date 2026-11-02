@@ -16,7 +16,12 @@ const since = new Date(Date.now() - days * 86400e3).toISOString();
 const read = name => {
   try { return fs.readFileSync(path.join(DATA_DIR, name), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { return []; }
 };
-const events = read('events.jsonl').filter(e => e.t >= since);
+const { reportFilter, ownCalendars } = require('./report-filter');
+const { calKey } = require('../lib/log');
+const filter = reportFilter(DATA_DIR);
+const allEvents = read('events.jsonl');
+// counted: people only (no automated traffic, not the owner's browsers), since tracking was cleaned up
+const events = allEvents.filter(e => e.t >= since && (e.type === 'calendar_fetch' || filter.counted(e)));
 const usage = read('usage.jsonl').filter(u => u.t >= since);
 
 const pad = (s, n) => String(s).padEnd(n);
@@ -35,7 +40,7 @@ const opens = events.filter(e => e.type === 'story_open');
 const made = events.filter(e => e.type === 'story_generate');
 const story = e => `${e.ticker} ${e.label || e.period} ${e.freq === 'a' ? 'annual ' : ''}${e.lang}`;
 
-console.log(`Last ${days} days${events.length ? ` (log starts ${read('events.jsonl')[0].t.slice(0, 10)})` : ' (no events logged yet)'} · visitors are anonymous browser ids\n`);
+console.log(`Last ${days} days${filter.since ? `, counted from ${filter.since.slice(0, 16).replace('T', ' ')} UTC` : ''} · anonymous browser ids · leaves out automated traffic (${new Set(allEvents.filter(e => e.t >= since && filter.isBot(e)).map(e => e.v)).size} visitors) and your own browsers\n`);
 console.log(pad('', 18) + pad('PV', 8) + pad('UV', 8) + pad('UV/PV', 8) + 'PV/UV');
 row('Site (page views)', stats(views));
 row('Story reads', stats(opens));
@@ -80,4 +85,9 @@ for (const f of notes.slice(-20)) console.log(`  ${f.t.slice(0, 16).replace('T',
 
 let emails = {};
 try { emails = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'email-reminders.json'), 'utf8')); } catch { /* none yet */ }
-console.log(`\nEmail reminder sign-ups: ${Object.keys(emails).length}` + (Object.keys(emails).length ? ` (latest ${Object.values(emails).map(e => e.since).sort().at(-1).slice(0, 10)})` : ''));
+let follows = {};
+try { follows = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'follows.json'), 'utf8')); } catch { /* none yet */ }
+const own = ownCalendars(allEvents, filter.mine);
+const signups = Object.entries(emails).filter(([id]) => !own.has(calKey(id))); // not the owner's own
+console.log(`\nEmail reminder sign-ups: ${signups.length}${signups.length < Object.keys(emails).length ? ` (plus ${Object.keys(emails).length - signups.length} of yours)` : ''}`);
+for (const [id, e] of signups.sort((a, b) => (a[1].since < b[1].since ? 1 : -1))) console.log(`  ${e.email} · since ${e.since.slice(0, 10)} · following ${(follows[id] || []).join(', ') || 'nothing yet'}`);
