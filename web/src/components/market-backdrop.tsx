@@ -5,15 +5,16 @@ import { date, longDate, t, useLang } from '@/lib/i18n'
 
 interface Macro {
   months: string[]
+  sp500?: (number | null)[] // absent from a copy cached before it was added
   fed: (number | null)[]
   yield10: (number | null)[]
   inflation: (number | null)[]
   oil: (number | null)[]
-  latest: Record<'fed' | 'yield10' | 'inflation' | 'oil', { value: number; date: string } | null>
+  latest: Partial<Record<Key, { value: number; date: string } | null>>
   schedule?: { fedLast: string | null; fedNext: string | null; pceNext: string | null }
   source: string
 }
-type Key = 'fed' | 'yield10' | 'inflation' | 'oil'
+type Key = 'sp500' | 'fed' | 'yield10' | 'inflation' | 'oil'
 interface Line { key: Key; name: string; color: string }
 
 const RATES: Line[] = [
@@ -22,24 +23,29 @@ const RATES: Line[] = [
   { key: 'inflation', name: 'Core inflation', color: '#f59e0b' },
 ]
 const OIL: Line[] = [{ key: 'oil', name: 'Oil (WTI)', color: '#a78bfa' }]
+const SP500: Line[] = [{ key: 'sp500', name: 'S&P 500', color: '#38bdf8' }]
 const pctFmt = (v: number) => v.toFixed(2) + '%'
 const usdFmt = (v: number) => '$' + v.toFixed(0)
+const ptsFmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 0 })
 
 const W = 760, PL = 40, PR = 150, PT = 12, PB = 26
 /**
  * A line chart with each line labelled at its end (name and value, in its colour), no legend to look up.
  * Hovering (or dragging on a phone) moves a marker across both charts and the labels show that month.
  */
-function LineChart({ d, lines, fmt, tick, height, hover, onHover, note }: {
+function LineChart({ d, lines, fmt, tick, height, hover, onHover, note, step: fixedStep }: {
   d: Macro; lines: Line[]; fmt: (v: number) => string; tick: (v: number) => string; height: number
+  step?: number // the gap between gridlines (otherwise 1, or 20 for values above 20)
   hover: number | null; onHover: (i: number | null) => void
   note: (key: Key, month: string) => string // the small grey line under an end-of-line label (its month, what's next)
 }) {
+  const vals = (k: Key) => d[k] ?? []
   lines = lines.filter(l => Array.isArray(d[l.key])) // a series the server didn't send is left out
   const n = d.months.length, H = height
   const x = (i: number) => PL + (i / (n - 1)) * (W - PL - PR)
-  const all = lines.flatMap(l => d[l.key]).filter((v): v is number => v != null)
-  const step = Math.max(...all) > 20 ? 20 : 1
+  const all = lines.flatMap(l => vals(l.key)).filter((v): v is number => v != null)
+  if (!all.length) return null
+  const step = fixedStep ?? (Math.max(...all) > 20 ? 20 : 1)
   const max = Math.ceil(Math.max(...all) / step) * step, min = Math.min(0, Math.floor(Math.min(...all) / step) * step)
   const y = (v: number) => PT + (1 - (v - min) / (max - min)) * (H - PT - PB)
   const ticks: number[] = []
@@ -52,8 +58,8 @@ function LineChart({ d, lines, fmt, tick, height, hover, onHover, note }: {
     for (let i = vals.length - 1; i >= 0; i--) if (vals[i] != null) return i
     return null
   }
-  const labels = lines.map(l => ({ l, i: at(d[l.key]) })).filter((v): v is { l: Line; i: number } => v.i != null)
-    .map(({ l, i }) => ({ l, i, v: d[l.key][i]!, ly: y(d[l.key][i]!) }))
+  const labels = lines.map(l => ({ l, i: at(vals(l.key)) })).filter((v): v is { l: Line; i: number } => v.i != null)
+    .map(({ l, i }) => ({ l, i, v: vals(l.key)[i]!, ly: y(vals(l.key)[i]!) }))
     .sort((a, b) => a.ly - b.ly)
   for (let k = 1; k < labels.length; k++) labels[k].ly = Math.max(labels[k].ly, labels[k - 1].ly + (hover == null ? 46 : 40))
   const years = d.months.map((m, i) => [m, i] as const).filter(([m]) => m.endsWith('-01'))
@@ -72,7 +78,7 @@ function LineChart({ d, lines, fmt, tick, height, hover, onHover, note }: {
       ))}
       {years.map(([m, i]) => <text key={m} x={x(i)} y={H - 6} textAnchor="middle" className="fill-muted-foreground text-[12px]">{m.slice(0, 4)}</text>)}
       {hover != null && <line x1={x(hover)} x2={x(hover)} y1={PT} y2={H - PB} className="stroke-muted-foreground" strokeDasharray="3 3" />}
-      {lines.map(l => <path key={l.key} d={path(d[l.key])} fill="none" stroke={l.color} strokeWidth={2.25} strokeLinejoin="round" />)}
+      {lines.map(l => <path key={l.key} d={path(vals(l.key))} fill="none" stroke={l.color} strokeWidth={2.25} strokeLinejoin="round" />)}
       {/* the hovered month on the x axis, under the crosshair (kept inside the plot) */}
       {hover != null && (() => {
         const w = 76, cx = Math.min(Math.max(x(hover), PL + w / 2), W - PR - w / 2)
@@ -108,7 +114,7 @@ function LineChart({ d, lines, fmt, tick, height, hover, onHover, note }: {
   )
 }
 
-/** The market page: interest rates, inflation and oil, the forces that move the whole market. */
+/** The market page: the S&P 500, and the forces that move the whole market (interest rates, inflation and oil). */
 export function MarketPage({ back }: { back: { label: string; onClick: () => void } }) {
   useLang()
   const [d, setD] = useState<Macro | null>(null)
@@ -135,7 +141,7 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
       </button>
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">{t('Market')}</h1>
-        <p className="mt-1 text-muted-foreground">{t('Interest rates, inflation and oil: the forces that move the whole market. Monthly, last 10 years.')}</p>
+        <p className="mt-1 text-muted-foreground">{t('The S&P 500, and the forces that move the whole market: interest rates, inflation and oil. Monthly, last 10 years.')}</p>
       </div>
       {failed ? <p className="text-sm text-muted-foreground">{t('Could not reach the server.')}</p>
         : !d ? <div className="space-y-4"><Skeleton className="h-[300px] w-full rounded-xl" /><Skeleton className="h-[200px] w-full rounded-xl" /></div>
@@ -143,6 +149,12 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
           <div className="h-5 text-sm text-muted-foreground">
             {t('Monthly averages, latest month at the end of each line. Point at a chart for any month.')}
           </div>
+          {d.sp500 && (
+            <section className="space-y-2 rounded-xl border bg-card p-4">
+              <h2 className="font-semibold">{t('S&P 500')}</h2>
+              <LineChart d={d} lines={SP500} fmt={ptsFmt} tick={ptsFmt} step={1000} height={220} hover={hover} onHover={setHover} note={note} />
+            </section>
+          )}
           <section className="space-y-2 rounded-xl border bg-card p-4">
             <h2 className="font-semibold">{t('Interest rates and inflation')}</h2>
             <LineChart d={d} lines={RATES} fmt={pctFmt} tick={v => v + '%'} height={300} hover={hover} onHover={setHover} note={note} />
@@ -152,6 +164,7 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
             <LineChart d={d} lines={OIL} fmt={usdFmt} tick={v => '$' + v} height={200} hover={hover} onHover={setHover} note={note} />
           </section>
           <section className="space-y-2 text-sm leading-relaxed text-muted-foreground">
+            {d.sp500 && <p><span className="font-medium text-foreground">{t('S&P 500')}</span> {latest('sp500', ptsFmt)}: {t('the 500 largest US companies, the usual measure of "the market"; when it falls, most stocks fall with it.')}</p>}
             <p><span className="font-medium text-foreground">{t('Fed rate')}</span> {latest('fed', pctFmt)}
               {sched?.fedNext && <> · {sched.fedLast && t('last decision {date}', { date: day(sched.fedLast) }) + ' · '}<span className="font-medium text-foreground">{t('next decision {date}', { date: day(sched.fedNext) })}</span></>}
               : {t("set by the Federal Reserve at its meetings; it sets what cash and short-term loans earn.")}</p>

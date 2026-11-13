@@ -588,7 +588,7 @@ const server = http.createServer(async (req, res) => {
         if (!post && q.get('open') === '1' && m.ai.status === 'ok') log.event('story_open', req, story); // someone opened it to read
         return json(req, res, 200, m);
       }
-      case '/api/macro': // the market backdrop (10-year yield, core inflation, oil), from FRED
+      case '/api/macro': // the market backdrop (S&P 500, Fed rate, 10-year yield, core inflation, oil), from FRED
         return json(req, res, 200, await macro.marketBackdrop(CACHE_DIR));
       case '/api/news': { // "Latest from the company": announcements from its own SEC filings
         const r = await statements(url.searchParams.get('ticker'));
