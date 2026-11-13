@@ -63,6 +63,11 @@ function LineChart({ d, lines, fmt, tick, height, hover, onHover, note, step: fi
     .sort((a, b) => a.ly - b.ly)
   for (let k = 1; k < labels.length; k++) labels[k].ly = Math.max(labels[k].ly, labels[k - 1].ly + (hover == null ? 46 : 40))
   const years = d.months.map((m, i) => [m, i] as const).filter(([m]) => m.endsWith('-01'))
+  // the hovered month's pill on the x axis, under the crosshair (kept inside the plot), as wide as its text (CJK characters
+  // are wider); a year label it would cover or touch is left out
+  const pillText = hover == null ? '' : date(d.months[hover] + '-01', { month: 'short', year: 'numeric' })
+  const pillW = [...pillText].reduce((w, c) => w + (c > '\u2e7f' ? 12 : c === ' ' ? 3.5 : 7.4), 12)
+  const pillX = hover == null ? null : Math.min(Math.max(x(hover), PL + pillW / 2), W - PR - pillW / 2)
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full touch-none select-none" onPointerLeave={() => onHover(null)}
       onPointerMove={e => {
@@ -76,19 +81,15 @@ function LineChart({ d, lines, fmt, tick, height, hover, onHover, note, step: fi
           <text x={PL - 8} y={y(v) + 4} textAnchor="end" className="fill-muted-foreground text-[12px]">{tick(v)}</text>
         </g>
       ))}
-      {years.map(([m, i]) => <text key={m} x={x(i)} y={H - 6} textAnchor="middle" className="fill-muted-foreground text-[12px]">{m.slice(0, 4)}</text>)}
+      {years.map(([m, i]) => (pillX == null || Math.abs(x(i) - pillX) > pillW / 2 + 19) && <text key={m} x={x(i)} y={H - 6} textAnchor="middle" className="fill-muted-foreground text-[12px]">{m.slice(0, 4)}</text>)}
       {hover != null && <line x1={x(hover)} x2={x(hover)} y1={PT} y2={H - PB} className="stroke-muted-foreground" strokeDasharray="3 3" />}
       {lines.map(l => <path key={l.key} d={path(vals(l.key))} fill="none" stroke={l.color} strokeWidth={2.25} strokeLinejoin="round" />)}
-      {/* the hovered month on the x axis, under the crosshair (kept inside the plot) */}
-      {hover != null && (() => {
-        const w = 76, cx = Math.min(Math.max(x(hover), PL + w / 2), W - PR - w / 2)
-        return (
-          <g>
-            <rect x={cx - w / 2} y={H - PB + 2} width={w} height={22} rx={5} className="fill-foreground" />
-            <text x={cx} y={H - 8} textAnchor="middle" className="fill-background text-[12px] font-semibold">{date(d.months[hover] + '-01', { month: 'short', year: 'numeric' })}</text>
-          </g>
-        )
-      })()}
+      {hover != null && pillX != null && (
+        <g>
+          <rect x={pillX - pillW / 2} y={H - PB + 2} width={pillW} height={22} rx={5} className="fill-foreground" />
+          <text x={pillX} y={H - 8} textAnchor="middle" className="fill-background text-[12px] font-semibold">{pillText}</text>
+        </g>
+      )}
       {labels.map(({ l, i, v, ly }) => {
         // at the end of the line, in the right margin; while hovering, beside the point (left of it near the right edge)
         const left = hover != null && x(i) > W - PR - 140
@@ -99,10 +100,10 @@ function LineChart({ d, lines, fmt, tick, height, hover, onHover, note, step: fi
             <circle cx={x(i)} cy={y(v)} r={4} fill={l.color} className="stroke-background" strokeWidth={2} />
             {/* a thin leader from the point to its label when the label had to move */}
             {hover == null && <line x1={x(i) + 6} x2={W - PR + 10} y1={y(v)} y2={ly} stroke={l.color} strokeOpacity={0.35} />}
-            {/* while hovering, a solid backing so the label reads over the lines */}
+            {/* while hovering, a backing so the label reads over the lines, which still show faintly through it */}
             {hover != null && (() => {
               const w = Math.max(t(l.name).length * 6.8, fmt(v).length * 8.6) + 14
-              return <rect x={left ? lx - w + 6 : lx - 7} y={ly - 16} width={w} height={36} rx={6} className="fill-card stroke-border" strokeWidth={1} />
+              return <rect x={left ? lx - w + 6 : lx - 7} y={ly - 16} width={w} height={36} rx={6} className="fill-card stroke-border" fillOpacity={0.82} strokeWidth={1} />
             })()}
             <text x={lx} y={ly - 2} textAnchor={anchor} fill={l.color} className="text-[12px] font-medium">{t(l.name)}</text>
             <text x={lx} y={ly + 14} textAnchor={anchor} className="fill-foreground text-[14px] font-semibold">{fmt(v)}</text>
@@ -126,10 +127,13 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
   const sched = d?.schedule
   const day = (iso: string) => date(iso, { month: 'short', day: 'numeric' })
   const month = (m: string) => date(m + '-01', { month: 'short', year: 'numeric' })
-  const note = (k: Key, m: string) =>
-    k === 'fed' && sched?.fedNext ? t('Next decision {date}', { date: day(sched.fedNext) })
-    : k === 'inflation' && sched?.pceNext ? t('{month} · next {date}', { month: month(m), date: day(sched.pceNext) })
-    : t('{month} average', { month: month(m) })
+  const note = (k: Key, m: string) => {
+    const l = d?.latest[k]
+    if (k === 'fed' && sched?.fedNext) return t('Next decision {date}', { date: day(sched.fedNext) })
+    if (k === 'inflation') return sched?.pceNext ? t('{month} · next {date}', { month: month(m), date: day(sched.pceNext) }) : month(m)
+    if (l && l.date.slice(0, 7) === m) return longDate(l.date) // the line ends at the latest day's value, not a month's average
+    return t('{month} average', { month: month(m) })
+  }
   const latest = (k: Key, f: (v: number) => string) => {
     const l = d?.latest[k]
     return l ? <><span className="font-semibold text-foreground">{f(l.value)}</span> <span className="text-xs">({k === 'inflation' ? date(l.date, { month: 'short', year: 'numeric' }) : longDate(l.date)})</span></> : '—'
@@ -146,8 +150,8 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
       {failed ? <p className="text-sm text-muted-foreground">{t('Could not reach the server.')}</p>
         : !d ? <div className="space-y-4"><Skeleton className="h-[300px] w-full rounded-xl" /><Skeleton className="h-[200px] w-full rounded-xl" /></div>
         : <>
-          <div className="h-5 text-sm text-muted-foreground">
-            {t('Monthly averages, latest month at the end of each line. Point at a chart for any month.')}
+          <div className="min-h-5 text-sm text-muted-foreground">
+            {t('Monthly averages for prices and yields; each line ends at its latest value. Point at a chart, or drag across it, for any month.')}
           </div>
           {d.sp500 && (
             <section className="space-y-2 rounded-xl border bg-card p-4">
