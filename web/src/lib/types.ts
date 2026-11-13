@@ -37,10 +37,11 @@ export interface Statements {
   annual: Block
   source: { fetchedAt?: string; stale?: boolean; filings?: string }
   preliminary?: Preliminary | null
+  quarterlySource?: 'Eulerpool' // a foreign company: its quarters aren't in SEC data (lib/foreign.js)
   nextEarnings?: { date: string; basedOn: string; timing?: 'before-open' | 'after-close' | 'during'; time?: string; source?: string } | null // estimated from past results dates; `source`: set when the company has announced the date (via Eulerpool)
   reported?: { quarterly: Record<string, Reported>; annual: Record<string, Reported> } | null
   // analysts' revenue estimates (Eulerpool), in the statement's money unit: by quarter, and for the next quarter
-  estimates?: { byPeriod: Record<string, number>; next: { revenue: number; eps: number | null; date: string | null } | null; annual?: Record<string, number> | null } | null
+  estimates?: { byPeriod: Record<string, number>; next: { revenue: number; eps: number | null; date: string | null } | null; after?: { revenue: number; eps: number | null; date: string | null } | null; annual?: Record<string, number> | null } | null
 }
 
 /** When a period's results came out: the earnings press release and the 10-Q / 10-K. */
@@ -52,7 +53,7 @@ export interface Reported {
 /** Earnings-day figures read from a press release whose 10-Q / 10-K is not out yet. */
 export interface Preliminary {
   status: 'ready' | 'generating' | 'error' | 'no-key'
-  message?: string
+  link?: string // the press release's filing, when its figures couldn't be read
   period: Period
   release?: { filed: string; url: string }
   values?: Record<string, { value: number; src: string }>

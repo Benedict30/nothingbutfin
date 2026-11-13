@@ -58,12 +58,14 @@ export function loadPrefs(): Prefs {
   }
 }
 
-export function savePrefs(p: Prefs) {
+/** Remembers the settings; the address shows the company and view (or, on the market page, just that). */
+export function savePrefs(p: Prefs, market = false) {
   try {
     localStorage.setItem(KEY, JSON.stringify(p))
   } catch {
     /* storage unavailable */
   }
+  if (market) return history.replaceState(null, '', '?view=market')
   const q = new URLSearchParams({ ticker: p.ticker })
   if (p.tab !== 'income') q.set('tab', p.tab)
   if (p.freq !== 'q') q.set('freq', p.freq)

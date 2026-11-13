@@ -13,7 +13,7 @@ const tone = (v: number | null): Tone => (v == null ? 'none' : Math.abs(v) < 0.0
 
 /**
  * Rows of one statement for the given periods (indexes into block.periods), with growth sub-lines.
- * `estimates` (period key → analysts' revenue estimate) adds "Analyst estimate" and "Surprise"
+ * `estimates` (period key → analysts' revenue estimate) adds "Analyst estimate" and "vs analysts"
  * lines under Total Revenue.
  */
 export function buildRows(block: Block, tab: StatementKey, freq: Freq, modes: Mode[], idx: number[], estimates?: Record<string, number> | null): ViewRow[] {
@@ -31,6 +31,11 @@ export function buildRows(block: Block, tab: StatementKey, freq: Freq, modes: Mo
   const subLabels = (['qoq', 'qoqp', 'yoy', 'yoyp'] as Mode[]).filter(on).map(m => t({ qoq: 'QoQ Growth', qoqp: 'QoQ Growth %', yoy: 'YoY Growth', yoyp: 'YoY Growth %' }[m]))
 
   const withEstimate = (key: string) => key === 'revenue' && !!estimates && Object.keys(estimates).length > 0
+  // what the projection formula would have said for each quarter (from the two before it), against what
+  // came in; shown under Total Revenue while projections are on (the block then has the projected quarter)
+  const withProjection = (key: string) => key === 'revenue' && isQ && all.some(p => p.key === 'PROJQ')
+  const project = (last: number | null, before: number | null) =>
+    last == null || before == null ? null : last > 0 && before > 0 ? last * (last / before) : last + (last - before)
 
   return block.statements[tab].rows
     .filter(r => idx.some(i => r.vals[i] != null))
@@ -68,11 +73,18 @@ export function buildRows(block: Block, tab: StatementKey, freq: Freq, modes: Mo
             subs.push({ text: d == null ? '—' : `${fmt(d)} (${fmt((d / e!) * 100)}%)`, tone: tone(d) })
           }
         }
+        if (withProjection(row.key)) {
+          const prev = p.q ? at(prevQ(p)) : null
+          const pr = p.projected || !p.q ? null : project(prev, prev == null ? null : at(prevQ({ ...p, fy: p.q === 1 ? p.fy - 1 : p.fy, q: p.q === 1 ? 4 : p.q - 1 })))
+          const d = pr == null || v == null ? null : v - pr
+          subs.push({ text: pr == null ? '—' : fmt(pr), tone: 'none' })
+          subs.push({ text: d == null ? '—' : `${fmt(d)} (${fmt((d / Math.abs(pr!)) * 100)}%)`, tone: tone(d) })
+        }
         return { main: v == null ? '—' : fmt(v), value: v, empty: v == null, subs, src: row.src?.[i] ?? null }
       })
       // sparkline + chart popover: the 20 most recent periods, oldest → newest
       const hist = all.slice(off, off + 20).map((p, i) => ({ label: p.label, value: row.vals[i + off], prev: at(isQ ? prevQ(p) : prevY(p)), yearAgo: at(prevY(p)) })).reverse()
-      const labels = withEstimate(row.key) ? [...subLabels, t('Analyst estimate'), t('Surprise')] : subLabels
+      const labels = [...subLabels, ...(withEstimate(row.key) ? [t('Analyst estimate'), t('vs analysts')] : []), ...(withProjection(row.key) ? [t('Projection'), t('vs projection')] : [])]
       return { key: row.key, name: itemName(row.key, row.name), total: !!row.total, unit: row.unit, subLabels: labels, cells, spark: row.vals.slice(off, off + 20).reverse(), hist }
     })
 }

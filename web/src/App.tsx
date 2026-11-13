@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ExternalLink, Globe, Loader2 } from 'lucide-react'
+import { ExternalLink, Globe, Loader2, Activity } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -10,6 +10,9 @@ import { MagazineProvider } from '@/components/magazine'
 import { NextEarnings } from '@/components/next-earnings'
 import { MyCalendar } from '@/components/my-calendar'
 import { Feedback } from '@/components/feedback'
+import { CompanyNews } from '@/components/company-news'
+import { CompanyLogo } from '@/components/company-logo'
+import { MarketPage } from '@/components/market-backdrop'
 import { InstallApp } from '@/components/install-app'
 import { loadFollows } from '@/lib/calendar'
 import { rememberRecent, Search } from '@/components/search'
@@ -38,6 +41,10 @@ function quarterLabel(end: string) {
   return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`
 }
 
+/** The projection formula for one row: the latest value grown at its latest rate (for a loss, the same change in dollars). */
+const project = (last: number | null, before: number | null, shares = false) =>
+  last == null || before == null ? null : shares ? last : last > 0 && before > 0 ? last * (last / before) : last + (last - before)
+
 /**
  * The quarterly block with the next quarter projected in front: the latest quarter grown at its
  * latest quarter-on-quarter rate (for a loss, the same change in dollars; share counts unchanged).
@@ -56,10 +63,7 @@ function withQuarterProjection(block: Block): Block {
       ...st,
       rows: st.rows.map(r => {
         const [last, before] = r.vals
-        const v = st.kind !== 'flow' || last == null || before == null ? null
-          : r.unit === 'shares' ? last
-          : last > 0 && before > 0 ? last * (last / before)
-          : last + (last - before)
+        const v = st.kind !== 'flow' ? null : project(last, before, r.unit === 'shares')
         return { ...r, vals: [v, ...r.vals], src: [null, ...(r.src ?? r.vals.map(() => null))] }
       }),
     }]),
@@ -81,18 +85,6 @@ function withoutProjection(block: Block): Block {
 const SHORT: Record<Mode, string> = { qoq: 'QoQ', qoqp: 'QoQ %', yoy: 'YoY', yoyp: 'YoY %' }
 
 /** Company logo (via our server, cached); the initials when there is none. */
-function CompanyLogo({ ticker, name }: { ticker: string; name?: string }) {
-  const [failed, setFailed] = useState(false)
-  const [loaded, setLoaded] = useState(false) // a grey tile until the image arrives, not a white flash
-  useEffect(() => { setFailed(false); setLoaded(false) }, [ticker])
-  const box = 'size-10 shrink-0 rounded-lg'
-  if (failed || !ticker) {
-    const initials = (name || ticker).replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
-    return <div aria-hidden className={cn(box, 'flex items-center justify-center bg-muted text-sm font-semibold text-muted-foreground')}>{initials}</div>
-  }
-  return <img src={'logo/' + encodeURIComponent(ticker) + '.png'} alt="" className={cn(box, 'object-contain p-1.5', loaded ? 'bg-white' : 'bg-muted')} onLoad={() => setLoaded(true)} onError={() => setFailed(true)} />
-}
-
 /** Language menu in the top bar. */
 function LanguagePicker() {
   const { lang, setLang } = useLang()
@@ -139,8 +131,32 @@ export default function App() {
     try { if (sessionStorage.getItem('fsv-excluded')) { sessionStorage.removeItem('fsv-excluded'); toast.success('This browser is excluded from analytics') } } catch { /* storage unavailable */ }
   }, [])
   const update = (p: Partial<Prefs>) => setPrefs(cur => ({ ...cur, ...p }))
+  // a company's page, or the market page (?view=market); Back and Forward move between them
+  const [view, setView] = useState<'company' | 'market'>(() => (new URLSearchParams(location.search).get('view') === 'market' ? 'market' : 'company'))
+  const openCompany = (ticker: string, company?: SearchResult) => {
+    setPicked(company ?? null)
+    update({ ticker: ticker.toUpperCase() })
+    if (view === 'market') { history.pushState(null, '', '?ticker=' + encodeURIComponent(ticker.toUpperCase())); setView('company'); window.scrollTo(0, 0) }
+  }
+  const showCompany = () => { if (view === 'market') history.back() }
+  const showMarket = () => {
+    if (view === 'market') return
+    history.pushState(null, '', '?view=market')
+    setView('market')
+    window.scrollTo(0, 0)
+  }
+  useEffect(() => {
+    const onPop = () => {
+      const q = new URLSearchParams(location.search)
+      if (q.get('view') === 'market') return setView('market')
+      if (q.get('ticker')) update({ ticker: q.get('ticker')!.toUpperCase() })
+      setView('company')
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
-  useEffect(() => savePrefs(prefs), [prefs])
+  useEffect(() => savePrefs(prefs, view === 'market'), [prefs, view])
 
   useEffect(() => {
     const ctl = new AbortController()
@@ -185,21 +201,23 @@ export default function App() {
   // a different company is loading: show it right away (name from search) with placeholders, not the old one
   const switching = loading && !!c && (c.ticker || String(c.cik)).toUpperCase() !== prefs.ticker
   const next = picked && picked.ticker.toUpperCase() === prefs.ticker ? picked : null
-  // the next quarter is projected until its press release brings the real (preliminary) figures
+  // the latest quarter (preliminary, from its press release, once that is out) and, with projections on,
+  // the next one projected
   const quarterly = useMemo(() => {
     if (!data) return null
-    if (prelim?.status === 'ready') return withPreliminary(data.quarterly, prelim)
-    return prefs.projection ? withQuarterProjection(data.quarterly) : data.quarterly
+    const block = prelim?.status === 'ready' ? withPreliminary(data.quarterly, prelim) : data.quarterly
+    return prefs.projection ? withQuarterProjection(block) : block
   }, [data, prelim, prefs.projection])
   // analysts' revenue estimates by period; the next quarter's goes on the projected or preliminary column
   const estimates = useMemo(() => {
     const e = data?.estimates
     if (!e) return null
     const map = { ...e.byPeriod }
-    if (e.next) {
-      map.PROJQ = e.next.revenue
-      if (prelim?.status === 'ready') map[prelim.period.key] = e.next.revenue
-    }
+    // the quarter after the latest filed one: the preliminary column if its results are out, else the projection
+    if (prelim?.status === 'ready') {
+      if (e.next) map[prelim.period.key] = e.next.revenue
+      if (e.after) map.PROJQ = e.after.revenue
+    } else if (e.next) map.PROJQ = e.next.revenue
     return map
   }, [data, prelim])
   const annual = useMemo(() => (data && !prefs.projection ? withoutProjection(data.annual) : data?.annual), [data, prefs.projection])
@@ -220,23 +238,29 @@ export default function App() {
       >
       <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1320px] items-center gap-6 px-6 py-3">
-          <div className="flex items-center gap-2 text-[15px] font-semibold tracking-tight whitespace-nowrap">
+          <button type="button" onClick={showCompany} className="flex items-center gap-2 rounded-md text-[15px] font-semibold tracking-tight whitespace-nowrap outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
             <img src="favicon.svg" alt="" className="size-6" />
             Nothing But Fin
-          </div>
-          <Search
-            onPick={(ticker, company) => {
-              setPicked(company ?? null)
-              update({ ticker: ticker.toUpperCase() })
-            }}
-          />
-          <div className="ml-auto">
+          </button>
+          <Search onPick={openCompany} />
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={showMarket}
+              aria-current={view === 'market' ? 'page' : undefined}
+              className={cn('inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-sm outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50', view === 'market' ? 'text-foreground' : 'text-muted-foreground')}
+            >
+              <Activity className="size-4" /> <span className="max-sm:hidden">{t('Market')}</span>
+            </button>
             <LanguagePicker />
           </div>
         </div>
       </header>
       <InstallApp />
 
+      {view === 'market' ? (
+        <main className="mx-auto max-w-[1100px] px-6 pt-7 pb-12"><MarketPage back={{ label: t('Back to {name}', { name: c?.ticker || prefs.ticker }), onClick: showCompany }} /></main>
+      ) : (
       <main className="mx-auto flex max-w-[1320px] flex-col gap-5 px-6 pt-7 pb-12">
         <section className="flex min-h-[92px] flex-col gap-1.5">
           {switching ? (
@@ -352,7 +376,7 @@ export default function App() {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-72 px-3 py-2 text-xs leading-relaxed">
-                  {t("Shows analysts' consensus revenue estimate under Total Revenue, and the surprise: reported revenue minus the estimate. Data by Eulerpool.")}
+                  {t("Shows analysts' consensus revenue estimate under Total Revenue, and how reported revenue compared with it. Data by Eulerpool.")}
                 </TooltipContent>
               </Tooltip>
             )}
@@ -385,14 +409,23 @@ export default function App() {
           </div>
         )}
 
+        {prefs.freq === 'q' && data?.quarterlySource === 'Eulerpool' && !switching && (
+          <div className="text-sm text-muted-foreground">
+            {t('{name} reports its quarters as press releases, not SEC data, so quarterly figures are from Eulerpool, shown only where they match its SEC annual reports.', { name: c?.ticker || '' })}
+          </div>
+        )}
+
         {prefs.freq === 'q' && prelim && prelim.status !== 'ready' && !switching && (
-          <div className="flex items-center gap-2.5 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-2.5 text-sm">
-            {prelim.status === 'generating' && <Loader2 className="size-4 shrink-0 animate-spin text-amber-400" />}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {prelim.status === 'generating' && <Loader2 className="size-3.5 shrink-0 animate-spin" />}
             <span>
               {t('{period} results are out (earnings press release) but not yet in the SEC data.', { period: prelim.period.label })}{' '}
               {prelim.status === 'generating' ? t('Reading the press release for preliminary figures…')
                 : prelim.status === 'no-key' ? t('Add an Anthropic API key to show preliminary figures from the press release.')
-                : t('Preliminary figures could not be read: {message}', { message: prelim.message ?? '' })}
+                : <>
+                    {t("Its figures will appear here when the {form} is filed.", { form: prelim.period.q === 4 ? '10‑K' : '10‑Q' })}{' '}
+                    {prelim.link && <a href={prelim.link} target="_blank" rel="noopener" className="inline-flex items-center gap-1 font-medium underline underline-offset-4">{t('Read the press release')} <ExternalLink className="size-3" /></a>}
+                  </>}
             </span>
           </div>
         )}
@@ -420,6 +453,8 @@ export default function App() {
           !error && <TableSkeleton tab={prefs.tab} keyOnly={prefs.keyRows} subLines={prefs.modes.filter(m => modeShown(m, prefs.freq)).length} />
         )}
 
+        {data && !switching && c?.ticker && <CompanyNews ticker={c.ticker} />}
+
         {data && !switching && (
           <footer className="flex flex-wrap justify-between gap-4 text-sm leading-relaxed text-muted-foreground">
             <div>
@@ -442,12 +477,13 @@ export default function App() {
           </footer>
         )}
       </main>
+      )}
       </MagazineProvider>
       <MyCalendar
         open={calendarOpen}
         onOpenChange={setCalendarOpen}
         onFollows={setFollows}
-        onPick={ticker => { setPicked(null); update({ ticker }) }}
+        onPick={ticker => openCompany(ticker)}
       />
       <Toaster theme="dark" position="bottom-right" offset={{ bottom: 76, right: 24 }} toastOptions={{ style: { fontFamily: 'inherit' } }} />
     </TooltipProvider>

@@ -37,13 +37,17 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const zlib = require('zlib');
-const { normalize } = require('./lib/edgar');
+const edgar = require('./lib/edgar');
+const { normalize } = edgar;
 const magazine = require('./lib/magazine');
 const preliminary = require('./lib/preliminary');
 const reminders = require('./lib/reminders');
 const log = require('./lib/log');
 const estimates = require('./lib/estimates');
 const quota = require('./lib/quota');
+const news = require('./lib/news');
+const macro = require('./lib/macro');
+const foreign = require('./lib/foreign');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -437,6 +441,8 @@ async function statements(tickerOrCik, fresh = false) {
   const result = normalize(data);
   result.company.ticker = info.ticker;
   result.company.exchange = info.exchange;
+  // no quarters in SEC data (a foreign company's quarterly results are 6-K press releases): Eulerpool's, where they match SEC's years
+  if (await foreign.fillQuarters(result, CACHE_DIR)) { edgar.addTtm(result.quarterly, result.annual); edgar.addProjection(result.quarterly, result.annual); }
   result.company.name = result.company.name || info.name;
   result.company.otherTickers = list.filter(r => r.cik === info.cik && r.ticker !== info.ticker).map(r => r.ticker);
   result.source = {
@@ -562,6 +568,11 @@ const server = http.createServer(async (req, res) => {
         const usd = r.currency === 'USD';
         const [qEst, aEst] = usd ? await Promise.all([estimates.quarterEstimates(CACHE_DIR, r.company.ticker), estimates.annualEstimates(CACHE_DIR, r.company.ticker)].map(p => p.catch(() => null))) : [null, null];
         const est = qEst || aEst ? { ...(estimates.forPeriods(qEst, r.quarterly.periods) || { byPeriod: {}, next: null }), annual: estimates.forYears(aEst, r.annual.periods) } : null;
+        // TTM: no published estimate for a rolling year, so the sum of its four quarters' estimates
+        if (est && r.annual.periods.some(p => p.key === 'TTM')) {
+          const four = r.quarterly.periods.slice(0, 4).map(p => est.byPeriod[p.key]);
+          if (four.length === 4 && four.every(v => v != null)) (est.annual = est.annual || {}).TTM = Math.round(four.reduce((a, b) => a + b, 0) * 1e3) / 1e3;
+        }
         return json(req, res, 200, { ...r, preliminary: pre, nextEarnings, reported, estimates: est });
       }
       case '/api/preliminary': {
@@ -576,6 +587,13 @@ const server = http.createServer(async (req, res) => {
         if (post && m.ai.status === 'generating') log.event('story_generate', req, story);
         if (!post && q.get('open') === '1' && m.ai.status === 'ok') log.event('story_open', req, story); // someone opened it to read
         return json(req, res, 200, m);
+      }
+      case '/api/macro': // the market backdrop (10-year yield, core inflation, oil), from FRED
+        return json(req, res, 200, await macro.marketBackdrop(CACHE_DIR));
+      case '/api/news': { // "Latest from the company": announcements from its own SEC filings
+        const r = await statements(url.searchParams.get('ticker'));
+        const items = await news.companyNews(await submissionsFor(r), { getText, htmlToText: magazine.htmlToText, exhibitUrl: magazine.exhibitUrl });
+        return json(req, res, 200, { items });
       }
       case '/api/magazine/status':
         return json(req, res, 200, await magazineStatus(url.searchParams.get('ticker'), url.searchParams.get('freq'), magazine.langOf(url.searchParams.get('lang'))));
