@@ -28,7 +28,7 @@ const pctFmt = (v: number) => v.toFixed(2) + '%'
 const usdFmt = (v: number) => '$' + v.toFixed(0)
 const ptsFmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 0 })
 
-const W = 760, PL = 40, PR = 150, PT = 12, PB = 26
+const W = 760, PL = 52, PR = 150, PT = 12, PB = 26 // PL fits a 6-character axis label such as "10,000"
 /**
  * A line chart with each line labelled at its end (name and value, in its colour), no legend to look up.
  * Hovering (or dragging on a phone) moves a marker across both charts and the labels show that month.
