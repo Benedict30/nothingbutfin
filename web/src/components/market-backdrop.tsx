@@ -6,15 +6,18 @@ import { date, longDate, t, useLang } from '@/lib/i18n'
 interface Macro {
   months: string[]
   sp500?: (number | null)[] // absent from a copy cached before it was added
+  earningsYield?: (number | null)[] // absent when the S&P 500's earnings have never been read
   fed: (number | null)[]
   yield10: (number | null)[]
   inflation: (number | null)[]
   oil: (number | null)[]
-  latest: Partial<Record<Key, { value: number; date: string } | null>>
+  // pe and earningsTo (the month the last four quarters of earnings end) come with the earnings yield only
+  latest: Partial<Record<Key, { value: number; date: string; pe?: number; earningsTo?: string } | null>>
   schedule?: { fedLast: string | null; fedNext: string | null; pceNext: string | null }
   source: string
+  earningsSource?: string
 }
-type Key = 'sp500' | 'fed' | 'yield10' | 'inflation' | 'oil'
+type Key = 'sp500' | 'earningsYield' | 'fed' | 'yield10' | 'inflation' | 'oil'
 interface Line { key: Key; name: string; color: string }
 
 const RATES: Line[] = [
@@ -24,6 +27,10 @@ const RATES: Line[] = [
 ]
 const OIL: Line[] = [{ key: 'oil', name: 'Oil (WTI)', color: '#a78bfa' }]
 const SP500: Line[] = [{ key: 'sp500', name: 'S&P 500', color: '#38bdf8' }]
+const VALUATION: Line[] = [ // the 10-year yield keeps its colour from the rates chart
+  { key: 'earningsYield', name: 'Earnings yield', color: '#ec4899' },
+  { key: 'yield10', name: '10-yr yield', color: 'var(--chart-up)' },
+]
 const pctFmt = (v: number) => v.toFixed(2) + '%'
 const usdFmt = (v: number) => '$' + v.toFixed(0)
 const ptsFmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 0 })
@@ -131,6 +138,7 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
     const l = d?.latest[k]
     if (k === 'fed' && sched?.fedNext) return t('Next decision {date}', { date: day(sched.fedNext) })
     if (k === 'inflation') return sched?.pceNext ? t('{month} · next {date}', { month: month(m), date: day(sched.pceNext) }) : month(m)
+    if (k === 'earningsYield') return l?.earningsTo ? t('Earnings to {month}', { month: month(l.earningsTo) }) : month(m) // earnings trail the price
     if (l && l.date.slice(0, 7) === m) return longDate(l.date) // the line ends at the latest day's value, not a month's average
     return t('{month} average', { month: month(m) })
   }
@@ -138,6 +146,7 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
     const l = d?.latest[k]
     return l ? <><span className="font-semibold text-foreground">{f(l.value)}</span> <span className="text-xs">({k === 'inflation' ? date(l.date, { month: 'short', year: 'numeric' }) : longDate(l.date)})</span></> : '—'
   }
+  const ey = d?.earningsYield ? d.latest.earningsYield : null // the S&P 500's earnings yield now, when there is one
   return (
     <div className="flex flex-col gap-6">
       <button type="button" onClick={back.onClick} className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
@@ -145,7 +154,7 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
       </button>
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">{t('Market')}</h1>
-        <p className="mt-1 text-muted-foreground">{t('The S&P 500, and the forces that move the whole market: interest rates, inflation and oil. Monthly, last 10 years.')}</p>
+        <p className="mt-1 text-muted-foreground">{t('The S&P 500, how expensive it is, and the forces that move the whole market: interest rates, inflation and oil. Monthly, last 10 years.')}</p>
       </div>
       {failed ? <p className="text-sm text-muted-foreground">{t('Could not reach the server.')}</p>
         : !d ? <div className="space-y-4"><Skeleton className="h-[300px] w-full rounded-xl" /><Skeleton className="h-[200px] w-full rounded-xl" /></div>
@@ -159,6 +168,12 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
               <LineChart d={d} lines={SP500} fmt={ptsFmt} tick={ptsFmt} step={1000} height={220} hover={hover} onHover={setHover} note={note} />
             </section>
           )}
+          {ey && (
+            <section className="space-y-2 rounded-xl border bg-card p-4">
+              <h2 className="font-semibold">{t('Valuation: what stocks earn and what Treasuries pay')}</h2>
+              <LineChart d={d} lines={VALUATION} fmt={pctFmt} tick={v => v + '%'} height={220} hover={hover} onHover={setHover} note={note} />
+            </section>
+          )}
           <section className="space-y-2 rounded-xl border bg-card p-4">
             <h2 className="font-semibold">{t('Interest rates and inflation')}</h2>
             <LineChart d={d} lines={RATES} fmt={pctFmt} tick={v => v + '%'} height={300} hover={hover} onHover={setHover} note={note} />
@@ -169,6 +184,9 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
           </section>
           <section className="space-y-2 text-sm leading-relaxed text-muted-foreground">
             {d.sp500 && <p><span className="font-medium text-foreground">{t('S&P 500')}</span> {latest('sp500', ptsFmt)}: {t('the 500 largest US companies, the usual measure of "the market"; when it falls, most stocks fall with it.')}</p>}
+            {ey && <p><span className="font-medium text-foreground">{t('Earnings yield')}</span> <span className="font-semibold text-foreground">{pctFmt(ey.value)}</span>
+              {ey.pe != null && ey.earningsTo && <> <span className="text-xs">({t('P/E {pe} · earnings to {month}', { pe: ey.pe.toFixed(1), month: month(ey.earningsTo) })})</span></>}
+              : {t("the S&P 500 companies' profit over the last four quarters as a share of the index's price, which is the P/E ratio upside down. When it is below the 10-year yield, stocks earn less than Treasuries pay, so their price counts on profits growing.")}</p>}
             <p><span className="font-medium text-foreground">{t('Fed rate')}</span> {latest('fed', pctFmt)}
               {sched?.fedNext && <> · {sched.fedLast && t('last decision {date}', { date: day(sched.fedLast) }) + ' · '}<span className="font-medium text-foreground">{t('next decision {date}', { date: day(sched.fedNext) })}</span></>}
               : {t("set by the Federal Reserve at its meetings; it sets what cash and short-term loans earn.")}</p>
@@ -177,7 +195,8 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
               {sched?.pceNext && <> · <span className="font-medium text-foreground">{t('next report {date}', { date: day(sched.pceNext) })}</span></>}
               : {t("the Fed's preferred measure (PCE, excluding food and energy); its target is 2%, and above it rates tend to stay high.")}</p>
             <p><span className="font-medium text-foreground">{t('Oil (WTI)')}</span> {latest('oil', usdFmt)}: {t('feeds inflation and company costs; helps energy stocks.')}</p>
-            <p className="pt-1 text-xs">{t('Source')}: <a href="https://fred.stlouisfed.org" target="_blank" rel="noopener" className="underline underline-offset-4">{d.source}</a></p>
+            <p className="pt-1 text-xs">{t('Source')}: <a href="https://fred.stlouisfed.org" target="_blank" rel="noopener" className="underline underline-offset-4">{d.source}</a>
+              {ey && d.earningsSource && <> · {t('S&P 500 earnings')}: <a href="https://shillerdata.com" target="_blank" rel="noopener" className="underline underline-offset-4">{d.earningsSource}</a></>}</p>
           </section>
         </>}
     </div>

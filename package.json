@@ -13,7 +13,7 @@
     "dev": "vite --config web/vite.config.ts",
     "build": "vite build --config web/vite.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node test/normalize.test.js && node test/magazine.test.js && node test/preliminary.test.js && node test/reminders.test.js && node test/macro.test.js",
+    "test": "node test/normalize.test.js && node test/magazine.test.js && node test/preliminary.test.js && node test/reminders.test.js && node test/macro.test.js && node test/shiller.test.js",
     "check:data": "node test/check-data.js",
     "mock": "node test/mock-sec.js"
   },
