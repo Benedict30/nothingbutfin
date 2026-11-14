@@ -35,6 +35,7 @@ const pctFmt = (v: number) => v.toFixed(2) + '%'
 const usdFmt = (v: number) => '$' + v.toFixed(0)
 const ptsFmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 0 })
 
+const WHY = 'space-y-1 border-t pt-3 text-sm leading-relaxed text-muted-foreground' // the notes under a chart, inside its card
 const W = 760, PL = 52, PR = 150, PT = 12, PB = 26 // PL fits a 6-character axis label such as "10,000"
 /**
  * A line chart with each line labelled at its end (name and value, in its colour), no legend to look up.
@@ -162,42 +163,49 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
           <div className="min-h-5 text-sm text-muted-foreground">
             {t('Monthly averages for prices and yields; each line ends at its latest value. Point at a chart, or drag across it, for any month.')}
           </div>
+          {/* each chart's card ends with what its lines are and why they matter */}
           {d.sp500 && (
             <section className="space-y-2 rounded-xl border bg-card p-4">
               <h2 className="font-semibold">{t('S&P 500')}</h2>
               <LineChart d={d} lines={SP500} fmt={ptsFmt} tick={ptsFmt} step={1000} height={220} hover={hover} onHover={setHover} note={note} />
+              <div className={WHY}>
+                <p><span className="font-medium text-foreground">{t('S&P 500')}</span> {latest('sp500', ptsFmt)}: {t('the 500 largest US companies, the usual measure of "the market"; when it falls, most stocks fall with it.')}</p>
+              </div>
             </section>
           )}
           {ey && (
             <section className="space-y-2 rounded-xl border bg-card p-4">
               <h2 className="font-semibold">{t('Valuation: what stocks earn and what Treasuries pay')}</h2>
               <LineChart d={d} lines={VALUATION} fmt={pctFmt} tick={v => v + '%'} height={220} hover={hover} onHover={setHover} note={note} />
+              <div className={WHY}>
+                <p><span className="font-medium text-foreground">{t('Earnings yield')}</span> <span className="font-semibold text-foreground">{pctFmt(ey.value)}</span>
+                  {ey.pe != null && ey.earningsTo && <> <span className="text-xs">({t('P/E {pe} · earnings to {month}', { pe: ey.pe.toFixed(1), month: month(ey.earningsTo) })})</span></>}
+                  : {t("the S&P 500 companies' profit over the last four quarters as a share of the index's price, which is the P/E ratio upside down. When it is below the 10-year yield, stocks earn less than Treasuries pay, so their price counts on profits growing.")}</p>
+              </div>
             </section>
           )}
           <section className="space-y-2 rounded-xl border bg-card p-4">
             <h2 className="font-semibold">{t('Interest rates and inflation')}</h2>
             <LineChart d={d} lines={RATES} fmt={pctFmt} tick={v => v + '%'} height={300} hover={hover} onHover={setHover} note={note} />
+            <div className={WHY}>
+              <p><span className="font-medium text-foreground">{t('Fed rate')}</span> {latest('fed', pctFmt)}
+                {sched?.fedNext && <> · {sched.fedLast && t('last decision {date}', { date: day(sched.fedLast) }) + ' · '}<span className="font-medium text-foreground">{t('next decision {date}', { date: day(sched.fedNext) })}</span></>}
+                : {t("set by the Federal Reserve at its meetings; it sets what cash and short-term loans earn.")}</p>
+              <p><span className="font-medium text-foreground">{t('10-yr yield')}</span> {latest('yield10', pctFmt)}: {t('set by investors every day; when it rises, stocks (growth stocks most) tend to fall, and mortgages get dearer.')}</p>
+              <p><span className="font-medium text-foreground">{t('Core inflation')}</span> {latest('inflation', pctFmt)}
+                {sched?.pceNext && <> · <span className="font-medium text-foreground">{t('next report {date}', { date: day(sched.pceNext) })}</span></>}
+                : {t("the Fed's preferred measure (PCE, excluding food and energy); its target is 2%, and above it rates tend to stay high.")}</p>
+            </div>
           </section>
           <section className="space-y-2 rounded-xl border bg-card p-4">
             <h2 className="font-semibold">{t('Oil (WTI), per barrel')}</h2>
             <LineChart d={d} lines={OIL} fmt={usdFmt} tick={v => '$' + v} height={200} hover={hover} onHover={setHover} note={note} />
+            <div className={WHY}>
+              <p><span className="font-medium text-foreground">{t('Oil (WTI)')}</span> {latest('oil', usdFmt)}: {t('feeds inflation and company costs; helps energy stocks.')}</p>
+            </div>
           </section>
-          <section className="space-y-2 text-sm leading-relaxed text-muted-foreground">
-            {d.sp500 && <p><span className="font-medium text-foreground">{t('S&P 500')}</span> {latest('sp500', ptsFmt)}: {t('the 500 largest US companies, the usual measure of "the market"; when it falls, most stocks fall with it.')}</p>}
-            {ey && <p><span className="font-medium text-foreground">{t('Earnings yield')}</span> <span className="font-semibold text-foreground">{pctFmt(ey.value)}</span>
-              {ey.pe != null && ey.earningsTo && <> <span className="text-xs">({t('P/E {pe} · earnings to {month}', { pe: ey.pe.toFixed(1), month: month(ey.earningsTo) })})</span></>}
-              : {t("the S&P 500 companies' profit over the last four quarters as a share of the index's price, which is the P/E ratio upside down. When it is below the 10-year yield, stocks earn less than Treasuries pay, so their price counts on profits growing.")}</p>}
-            <p><span className="font-medium text-foreground">{t('Fed rate')}</span> {latest('fed', pctFmt)}
-              {sched?.fedNext && <> · {sched.fedLast && t('last decision {date}', { date: day(sched.fedLast) }) + ' · '}<span className="font-medium text-foreground">{t('next decision {date}', { date: day(sched.fedNext) })}</span></>}
-              : {t("set by the Federal Reserve at its meetings; it sets what cash and short-term loans earn.")}</p>
-            <p><span className="font-medium text-foreground">{t('10-yr yield')}</span> {latest('yield10', pctFmt)}: {t('set by investors every day; when it rises, stocks (growth stocks most) tend to fall, and mortgages get dearer.')}</p>
-            <p><span className="font-medium text-foreground">{t('Core inflation')}</span> {latest('inflation', pctFmt)}
-              {sched?.pceNext && <> · <span className="font-medium text-foreground">{t('next report {date}', { date: day(sched.pceNext) })}</span></>}
-              : {t("the Fed's preferred measure (PCE, excluding food and energy); its target is 2%, and above it rates tend to stay high.")}</p>
-            <p><span className="font-medium text-foreground">{t('Oil (WTI)')}</span> {latest('oil', usdFmt)}: {t('feeds inflation and company costs; helps energy stocks.')}</p>
-            <p className="pt-1 text-xs">{t('Source')}: <a href="https://fred.stlouisfed.org" target="_blank" rel="noopener" className="underline underline-offset-4">{d.source}</a>
-              {ey && d.earningsSource && <> · {t('S&P 500 earnings')}: <a href="https://shillerdata.com" target="_blank" rel="noopener" className="underline underline-offset-4">{d.earningsSource}</a></>}</p>
-          </section>
+          <p className="text-xs text-muted-foreground">{t('Source')}: <a href="https://fred.stlouisfed.org" target="_blank" rel="noopener" className="underline underline-offset-4">{d.source}</a>
+            {ey && d.earningsSource && <> · {t('S&P 500 earnings')}: <a href="https://shillerdata.com" target="_blank" rel="noopener" className="underline underline-offset-4">{d.earningsSource}</a></>}</p>
         </>}
     </div>
   )
