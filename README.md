@@ -68,10 +68,10 @@ The bell on the next-earnings chip follows the company. Each browser gets a priv
 
 ## Market page
 
-`?view=market` (the Market button) shows three charts: the S&P 500, its P/E ratio against its 10-year average, and interest rates with inflation (the Fed's rate, the 10-year Treasury yield, core inflation). One point a month for the last 10 years, each line ending at its latest value (`lib/macro.js`, kept 12 hours). Each chart's card ends with what its lines are and why they matter.
+`?view=market` (the Market button) shows the S&P 500, its earnings yield against the 10-year Treasury yield, the Fed's rate, core inflation and oil: one point a month for the last 10 years, each line ending at its latest value (`lib/macro.js`, kept 12 hours).
 
-- **Index, rates, inflation:** FRED (Federal Reserve Bank of St. Louis) CSV downloads, which need no key. FRED carries only the last 10 years of the S&P 500. (`/api/macro` also returns WTI oil, which the page no longer charts.)
-- **S&P 500 earnings, for the P/E:** the spreadsheet Robert Shiller publishes at [shillerdata.com](https://shillerdata.com) (`lib/shiller.js`, kept a day), read with a small `.xls` reader (`lib/xls.js`) so the server needs no extra dependency. The file carries a no-guarantee disclaimer and states no licence; the page credits it. Its earnings (the last four quarters, per share) trail by a few months, so later months divide the current index by the latest earnings. If the spreadsheet can't be read or its layout changes, the last good copy is used, and with none the P/E chart is left out.
+- **Index, rates, inflation, oil:** FRED (Federal Reserve Bank of St. Louis) CSV downloads, which need no key. FRED carries only the last 10 years of the S&P 500.
+- **S&P 500 earnings:** the spreadsheet Robert Shiller publishes at [shillerdata.com](https://shillerdata.com) (`lib/shiller.js`, kept a day), read with a small `.xls` reader (`lib/xls.js`) so the server needs no extra dependency. The file carries a no-guarantee disclaimer and states no licence; the page credits it. Its earnings trail by a few months, so later months divide the latest earnings by the current index. If the spreadsheet can't be read or its layout changes, the last good copy is used, and with none the valuation chart is left out.
 
 ## Deploying
 
