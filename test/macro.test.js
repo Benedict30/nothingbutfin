@@ -53,4 +53,12 @@ assert.strictEqual(at(stopped, 'pe', '2026-10'), 30.3); // 12 months on: still O
 assert.strictEqual(at(stopped, 'pe', '2026-11'), null);
 assert.strictEqual(stopped.latest.pe, undefined);
 
+// FRED has only the S&P 500's last 12 months: Shiller's monthly prices fill the months before, FRED's win where both have one
+const history = assemble({ ...feeds, spPrices: [['2016-11', 2160], ['2026-08', 7500], ['2026-10', 9999]] }, new Date('2026-11-13T12:00:00Z'));
+assert.strictEqual(history.months[0], '2016-11');
+assert.strictEqual(at(history, 'sp500', '2016-11'), 2160);
+assert.strictEqual(at(history, 'sp500', '2026-08'), 7500);
+assert.strictEqual(at(history, 'sp500', '2026-10'), 7725); // FRED's, not Shiller's
+assert.strictEqual(at(history, 'sp500', '2026-11'), 7592.4);
+
 console.log('macro: all assertions passed');

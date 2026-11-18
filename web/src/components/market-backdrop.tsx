@@ -214,7 +214,7 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
             </div>
           </section>
           <p className="text-xs text-muted-foreground">{t('Source')}: <a href="https://fred.stlouisfed.org" target="_blank" rel="noopener" className="underline underline-offset-4">{d.source}</a>
-            {pe && d.earningsSource && <> · {t('S&P 500 earnings')}: <a href="https://shillerdata.com" target="_blank" rel="noopener" className="underline underline-offset-4">{d.earningsSource}</a></>}</p>
+            {pe && d.earningsSource && <> · {t('S&P 500 earnings and history')}: <a href="https://shillerdata.com" target="_blank" rel="noopener" className="underline underline-offset-4">{d.earningsSource}</a></>}</p>
         </>}
     </div>
   )
