@@ -13,7 +13,7 @@ interface Macro {
   latest: Partial<Record<Key, { value: number; date: string } | null>>
   schedule?: { fedLast: string | null; fedNext: string | null; pceNext: string | null }
   source: string
-  earningsSource?: string
+  historySource?: string // Shiller, for the S&P 500's months before FRED's 12
 }
 type Key = 'sp500' | 'fed' | 'yield10' | 'inflation' | 'oil'
 interface Line { key: Key; name: string; color: string }
@@ -186,7 +186,7 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
             </div>
           </section>
           <p className="text-xs text-muted-foreground">{t('Source')}: <a href="https://fred.stlouisfed.org" target="_blank" rel="noopener" className="underline underline-offset-4">{d.source}</a>
-            {d.sp500 && d.earningsSource && <> · {t('S&P 500 history')}: <a href="https://shillerdata.com" target="_blank" rel="noopener" className="underline underline-offset-4">{d.earningsSource}</a></>}</p>
+            {d.sp500 && d.historySource && <> · {t('S&P 500 history')}: <a href="https://shillerdata.com" target="_blank" rel="noopener" className="underline underline-offset-4">{d.historySource}</a></>}</p>
         </>}
     </div>
   )

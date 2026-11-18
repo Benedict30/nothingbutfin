@@ -39,20 +39,6 @@ assert.strictEqual(at(stale, 'oil', '2026-09'), 97.31);
 assert.strictEqual(at(stale, 'oil', '2026-10'), 102.07);
 assert.strictEqual(at(stale, 'oil', '2026-11'), null);
 
-// the P/E ratio: the month's S&P 500 over the last four quarters' earnings per share
-const valued = assemble({ ...feeds, earnings: [['2026-09', 300], ['2026-10', 309]] }, new Date('2026-11-13T12:00:00Z'));
-assert.strictEqual(at(valued, 'pe', '2026-09'), 25.5); // 7650 / 300
-assert.strictEqual(at(valued, 'pe', '2026-10'), 25); // 7725 / 309
-assert.strictEqual(at(valued, 'pe', '2026-11'), 24.6); // no November earnings yet: October's, under the latest close
-// the latest figure, the average of the months shown, and the same ratio upside down (309 / 7592.4)
-assert.deepStrictEqual(valued.latest.pe, { value: 24.6, date: '2026-11-03', earningsTo: '2026-10', average: 25, earningsYield: 4.07 });
-assert.ok(!('pe' in r) && !r.latest.pe); // without earnings the page simply has no such chart
-// earnings that stopped over a year ago aren't carried on: the line ends and there is no latest figure
-const stopped = assemble({ ...feeds, earnings: [['2025-09', 250], ['2025-10', 255]] }, new Date('2026-11-13T12:00:00Z'));
-assert.strictEqual(at(stopped, 'pe', '2026-10'), 30.3); // 12 months on: still October 2025's
-assert.strictEqual(at(stopped, 'pe', '2026-11'), null);
-assert.strictEqual(stopped.latest.pe, undefined);
-
 // FRED has only the S&P 500's last 12 months: Shiller's monthly prices fill the months before, FRED's win where both have one
 const history = assemble({ ...feeds, spPrices: [['2016-11', 2160], ['2026-08', 7500], ['2026-10', 9999]] }, new Date('2026-11-13T12:00:00Z'));
 assert.strictEqual(history.months[0], '2016-11');

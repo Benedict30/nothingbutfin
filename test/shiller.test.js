@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { sheetNumbers } = require('../lib/xls');
-const { fromSpreadsheet, spreadsheetUrl } = require('../lib/shiller');
+const { pricesFromSpreadsheet, spreadsheetUrl } = require('../lib/shiller');
 
 const file = fs.readFileSync(path.join(__dirname, 'shiller-fixture.xls'));
 
@@ -23,20 +23,16 @@ assert.throws(() => sheetNumbers(file, 'Prices'), /no sheet named/);
 assert.throws(() => sheetNumbers(Buffer.from('<html>not a spreadsheet</html>'.repeat(50)), 'Data'), /not an Excel/);
 assert.throws(() => sheetNumbers(file.subarray(0, 9000), 'Data'), /\.xls/); // cut short: an error, not half the numbers
 
-// earnings by month: 2026.1 is October, and the months without earnings are left out
-const { earnings, prices } = fromSpreadsheet(file);
-assert.deepStrictEqual(earnings[0], ['1871-01', 0.4]);
-assert.strictEqual(earnings.length, 2 + 10 * 12 + 6);
-assert.strictEqual(earnings.at(-1)[0], '2026-06');
-const months = earnings.map(e => e[0]);
-assert.ok(months.includes('2025-01') && months.includes('2025-10') && !months.includes('2026-07'));
-assert.deepStrictEqual(months, [...months].sort());
-// prices by month, including the months that have no earnings yet
+// prices by month (2026.1 is October), including the months that have no earnings yet
+const prices = pricesFromSpreadsheet(file);
 assert.deepStrictEqual(prices[0], ['1871-01', 4.44]);
 assert.deepStrictEqual(prices.at(-1), ['2026-10', 7633]);
+const months = prices.map(p => p[0]);
+assert.ok(months.includes('2025-01') && months.includes('2026-07'));
+assert.deepStrictEqual(months, [...months].sort());
 
 // the earnings moved to another column: refused, not charted
-assert.throws(() => fromSpreadsheet(fs.readFileSync(path.join(__dirname, 'shiller-shifted.xls'))), /not laid out as expected/);
+assert.throws(() => pricesFromSpreadsheet(fs.readFileSync(path.join(__dirname, 'shiller-shifted.xls'))), /not laid out as expected/);
 
 // the download link on the site's page (it changes with each upload)
 assert.strictEqual(
