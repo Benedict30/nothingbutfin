@@ -6,18 +6,19 @@ import { date, longDate, t, useLang } from '@/lib/i18n'
 interface Macro {
   months: string[]
   sp500?: (number | null)[] // absent from a copy cached before it was added
-  earningsYield?: (number | null)[] // absent when the S&P 500's earnings have never been read
+  pe?: (number | null)[] // the S&P 500's price/earnings ratio; absent when its earnings have never been read
   fed: (number | null)[]
   yield10: (number | null)[]
   inflation: (number | null)[]
   oil: (number | null)[]
-  // pe and earningsTo (the month the last four quarters of earnings end) come with the earnings yield only
-  latest: Partial<Record<Key, { value: number; date: string; pe?: number; earningsTo?: string } | null>>
+  // with the P/E only: earningsTo (the month the last four quarters of earnings end), average (of the months
+  // shown) and earningsYield (the same ratio upside down, as a %)
+  latest: Partial<Record<Key, { value: number; date: string; earningsTo?: string; average?: number; earningsYield?: number } | null>>
   schedule?: { fedLast: string | null; fedNext: string | null; pceNext: string | null }
   source: string
   earningsSource?: string
 }
-type Key = 'sp500' | 'earningsYield' | 'fed' | 'yield10' | 'inflation' | 'oil'
+type Key = 'sp500' | 'pe' | 'fed' | 'yield10' | 'inflation' | 'oil'
 interface Line { key: Key; name: string; color: string }
 
 const RATES: Line[] = [
@@ -27,12 +28,10 @@ const RATES: Line[] = [
 ]
 const OIL: Line[] = [{ key: 'oil', name: 'Oil (WTI)', color: '#a78bfa' }]
 const SP500: Line[] = [{ key: 'sp500', name: 'S&P 500', color: '#38bdf8' }]
-const VALUATION: Line[] = [ // the 10-year yield keeps its colour from the rates chart
-  { key: 'earningsYield', name: 'Earnings yield', color: '#ec4899' },
-  { key: 'yield10', name: '10-yr yield', color: 'var(--chart-up)' },
-]
+const PE: Line[] = [{ key: 'pe', name: 'P/E ratio', color: '#ec4899' }]
 const pctFmt = (v: number) => v.toFixed(2) + '%'
 const usdFmt = (v: number) => '$' + v.toFixed(0)
+const peFmt = (v: number) => v.toFixed(1)
 const ptsFmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 0 })
 
 const WHY = 'space-y-1 border-t pt-3 text-sm leading-relaxed text-muted-foreground' // the notes under a chart, inside its card
@@ -41,9 +40,10 @@ const W = 760, PL = 52, PR = 150, PT = 12, PB = 26 // PL fits a 6-character axis
  * A line chart with each line labelled at its end (name and value, in its colour), no legend to look up.
  * Hovering (or dragging on a phone) moves a marker across both charts and the labels show that month.
  */
-function LineChart({ d, lines, fmt, tick, height, hover, onHover, note, step: fixedStep }: {
+function LineChart({ d, lines, fmt, tick, height, hover, onHover, note, step: fixedStep, reference }: {
   d: Macro; lines: Line[]; fmt: (v: number) => string; tick: (v: number) => string; height: number
   step?: number // the gap between gridlines (otherwise 1, or 20 for values above 20)
+  reference?: { value: number; label: string } // a dashed level across the chart to read the line against (its average)
   hover: number | null; onHover: (i: number | null) => void
   note: (key: Key, month: string) => string // the small grey line under an end-of-line label (its month, what's next)
 }) {
@@ -90,6 +90,12 @@ function LineChart({ d, lines, fmt, tick, height, hover, onHover, note, step: fi
         </g>
       ))}
       {years.map(([m, i]) => (pillX == null || Math.abs(x(i) - pillX) > pillW / 2 + 19) && <text key={m} x={x(i)} y={H - 6} textAnchor="middle" className="fill-muted-foreground text-[12px]">{m.slice(0, 4)}</text>)}
+      {reference && (
+        <g>
+          <line x1={PL} x2={W - PR} y1={y(reference.value)} y2={y(reference.value)} className="stroke-muted-foreground" strokeDasharray="5 4" />
+          <text x={PL + 6} y={y(reference.value) - 6} className="fill-muted-foreground text-[11px]">{reference.label}</text>
+        </g>
+      )}
       {hover != null && <line x1={x(hover)} x2={x(hover)} y1={PT} y2={H - PB} className="stroke-muted-foreground" strokeDasharray="3 3" />}
       {lines.map(l => <path key={l.key} d={path(vals(l.key))} fill="none" stroke={l.color} strokeWidth={2.25} strokeLinejoin="round" />)}
       {hover != null && pillX != null && (
@@ -139,7 +145,7 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
     const l = d?.latest[k]
     if (k === 'fed' && sched?.fedNext) return t('Next decision {date}', { date: day(sched.fedNext) })
     if (k === 'inflation') return sched?.pceNext ? t('{month} · next {date}', { month: month(m), date: day(sched.pceNext) }) : month(m)
-    if (k === 'earningsYield') return l?.earningsTo ? t('Earnings to {month}', { month: month(l.earningsTo) }) : month(m) // earnings trail the price
+    if (k === 'pe') return l?.earningsTo ? t('Earnings to {month}', { month: month(l.earningsTo) }) : month(m) // earnings trail the price
     if (l && l.date.slice(0, 7) === m) return longDate(l.date) // the line ends at the latest day's value, not a month's average
     return t('{month} average', { month: month(m) })
   }
@@ -147,7 +153,8 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
     const l = d?.latest[k]
     return l ? <><span className="font-semibold text-foreground">{f(l.value)}</span> <span className="text-xs">({k === 'inflation' ? date(l.date, { month: 'short', year: 'numeric' }) : longDate(l.date)})</span></> : '—'
   }
-  const ey = d?.earningsYield ? d.latest.earningsYield : null // the S&P 500's earnings yield now, when there is one
+  const pe = d?.pe ? d.latest.pe : null // the S&P 500's P/E now, when there is one
+  const bond = d?.latest.yield10
   return (
     <div className="flex flex-col gap-6">
       <button type="button" onClick={back.onClick} className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
@@ -173,14 +180,16 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
               </div>
             </section>
           )}
-          {ey && (
+          {pe && (
             <section className="space-y-2 rounded-xl border bg-card p-4">
-              <h2 className="font-semibold">{t('Valuation: what stocks earn and what Treasuries pay')}</h2>
-              <LineChart d={d} lines={VALUATION} fmt={pctFmt} tick={v => v + '%'} height={220} hover={hover} onHover={setHover} note={note} />
+              <h2 className="font-semibold">{t("Valuation: the S&P 500's P/E ratio")}</h2>
+              <LineChart d={d} lines={PE} fmt={peFmt} tick={v => String(v)} step={10} height={220} hover={hover} onHover={setHover} note={note}
+                reference={pe.average != null ? { value: pe.average, label: t('10-year average {value}', { value: peFmt(pe.average) }) } : undefined} />
               <div className={WHY}>
-                <p><span className="font-medium text-foreground">{t('Earnings yield')}</span> <span className="font-semibold text-foreground">{pctFmt(ey.value)}</span>
-                  {ey.pe != null && ey.earningsTo && <> <span className="text-xs">({t('P/E {pe} · earnings to {month}', { pe: ey.pe.toFixed(1), month: month(ey.earningsTo) })})</span></>}
-                  : {t("the S&P 500 companies' profit over the last four quarters as a share of the index's price, which is the P/E ratio upside down. When it is below the 10-year yield, stocks earn less than Treasuries pay, so their price counts on profits growing.")}</p>
+                <p><span className="font-medium text-foreground">{t('P/E ratio')}</span> <span className="font-semibold text-foreground">{peFmt(pe.value)}</span>
+                  {' '}<span className="text-xs">({pe.earningsTo ? t('{date} · earnings to {month}', { date: longDate(pe.date), month: month(pe.earningsTo) }) : longDate(pe.date)})</span>
+                  : {t("the S&P 500's price divided by its companies' profit per share over the last four quarters: what investors pay for $1 of yearly profit. Higher is more expensive.")}
+                  {pe.earningsYield != null && bond && <> {t('Turned over, it is an earnings yield of {yield}, against the {bond} a 10-year Treasury pays.', { yield: pctFmt(pe.earningsYield), bond: pctFmt(bond.value) })}</>}</p>
               </div>
             </section>
           )}
@@ -205,7 +214,7 @@ export function MarketPage({ back }: { back: { label: string; onClick: () => voi
             </div>
           </section>
           <p className="text-xs text-muted-foreground">{t('Source')}: <a href="https://fred.stlouisfed.org" target="_blank" rel="noopener" className="underline underline-offset-4">{d.source}</a>
-            {ey && d.earningsSource && <> · {t('S&P 500 earnings')}: <a href="https://shillerdata.com" target="_blank" rel="noopener" className="underline underline-offset-4">{d.earningsSource}</a></>}</p>
+            {pe && d.earningsSource && <> · {t('S&P 500 earnings')}: <a href="https://shillerdata.com" target="_blank" rel="noopener" className="underline underline-offset-4">{d.earningsSource}</a></>}</p>
         </>}
     </div>
   )
