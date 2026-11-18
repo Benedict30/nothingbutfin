@@ -68,10 +68,10 @@ The bell on the next-earnings chip follows the company. Each browser gets a priv
 
 ## Market page
 
-`?view=market` (the Market button) shows four charts: the S&P 500, its P/E ratio against its 10-year average, interest rates with inflation (the Fed's rate, the 10-year Treasury yield, core inflation), and oil (WTI). One point a month for the last 10 years, each line ending at its latest value (`lib/macro.js`, kept 12 hours). Each chart's card ends with what its lines are and why they matter.
+`?view=market` (the Market button) shows three charts: the S&P 500, interest rates with inflation (the Fed's rate, the 10-year Treasury yield, core inflation), and oil (WTI). One point a month for the last 10 years, each line ending at its latest value (`lib/macro.js`, kept 12 hours). Each chart's card ends with what its lines are and why they matter.
 
 - **Index, rates, inflation, oil:** FRED (Federal Reserve Bank of St. Louis) CSV downloads, which need no key. FRED carries only the S&P 500's last 12 months; the months before come from Shiller's spreadsheet (below).
-- **S&P 500 earnings, for the P/E, and its prices before FRED's 12 months:** the spreadsheet Robert Shiller publishes at [shillerdata.com](https://shillerdata.com) (`lib/shiller.js`, kept a day), read with a small `.xls` reader (`lib/xls.js`) so the server needs no extra dependency. The file carries a no-guarantee disclaimer and states no licence; the page credits it. Its earnings (the last four quarters, per share) trail by a few months, so later months divide the current index by the latest earnings. If the spreadsheet can't be read or its layout changes, the last good copy is used, and with none the P/E chart is left out and the S&P 500 chart has only its last 12 months.
+- **S&P 500 prices before FRED's 12 months, and its earnings:** the spreadsheet Robert Shiller publishes at [shillerdata.com](https://shillerdata.com) (`lib/shiller.js`, kept a day), read with a small `.xls` reader (`lib/xls.js`) so the server needs no extra dependency. The file carries a no-guarantee disclaimer and states no licence; the page credits it. `/api/macro` still returns the P/E from its earnings (the last four quarters, per share, which trail by a few months), though the page no longer charts it. If the spreadsheet can't be read or its layout changes, the last good copy is used, and with none the S&P 500 chart has only its last 12 months.
 
 ## Deploying
 
