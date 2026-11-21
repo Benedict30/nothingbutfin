@@ -62,12 +62,13 @@ export function loadPrefs(): Prefs {
 export function savePrefs(p: Prefs, market = false) {
   try {
     localStorage.setItem(KEY, JSON.stringify(p))
+    localStorage.setItem('fsv-view', market ? 'market' : 'company') // reopened on the next plain visit (see index.html)
   } catch {
     /* storage unavailable */
   }
-  if (market) return history.replaceState(null, '', '?view=market')
+  if (market) return history.replaceState(history.state, '', '?view=market') // keeps App.tsx's fromCompany mark
   const q = new URLSearchParams({ ticker: p.ticker })
   if (p.tab !== 'income') q.set('tab', p.tab)
   if (p.freq !== 'q') q.set('freq', p.freq)
-  history.replaceState(null, '', '?' + q)
+  history.replaceState(history.state, '', '?' + q)
 }

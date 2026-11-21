@@ -138,10 +138,11 @@ export default function App() {
     update({ ticker: ticker.toUpperCase() })
     if (view === 'market') { history.pushState(null, '', '?ticker=' + encodeURIComponent(ticker.toUpperCase())); setView('company'); window.scrollTo(0, 0) }
   }
-  const showCompany = () => { if (view === 'market') history.back() }
+  // Back returns to the company page behind the market page; when the visit started on the market page there is none
+  const showCompany = () => { if (view === 'market') history.state?.fromCompany ? history.back() : openCompany(prefs.ticker) }
   const showMarket = () => {
     if (view === 'market') return
-    history.pushState(null, '', '?view=market')
+    history.pushState({ fromCompany: true }, '', '?view=market')
     setView('market')
     window.scrollTo(0, 0)
   }

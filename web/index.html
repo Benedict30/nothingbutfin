@@ -38,6 +38,8 @@
       } catch (e) {}
       // start loading the company's figures (and logo) while the app's code downloads (picked up by App.tsx)
       try {
+        // a plain visit reopens the page last used (company or market; see src/lib/prefs.ts)
+        if (!location.search && localStorage.getItem('fsv-view') === 'market') history.replaceState(null, '', '?view=market')
         var u = new URLSearchParams(location.search)
         var t = u.get('view') === 'market' ? '' : (u.get('ticker') || JSON.parse(localStorage.getItem('fsv-prefs') || '{}').ticker || 'AAPL').toUpperCase()
         // anonymous visitor id for counting visits (see src/lib/visitor.ts)
